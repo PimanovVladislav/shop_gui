@@ -10,7 +10,7 @@ def get_date(tmstmp):
 def get_products():
     with sqlite3.connect('db/database.db') as db:
         cursor = db.cursor()
-        query = """SELECT id, name, buy_price, sale_price, amount FROM products"""
+        query = """SELECT id, code, name, buy_price, sale_price, amount FROM products"""
         cursor.execute(query)
         return list(cursor)
 
@@ -34,3 +34,11 @@ def get_payment_type():
         query = """SELECT id, name FROM payment_type """
         cursor.execute(query)
         return list(cursor)
+
+def add_product(name, buy_price, sale_price, amount):
+    with sqlite3.connect('db/database.db') as db:
+        cursor = db.cursor()
+        query = f"""INSERT INTO products(code, name, buy_price, sale_price, amount, deleted) VALUES ("{name}",{buy_price},{sale_price},{amount},0)"""
+        print(query)
+        cursor.execute(query)
+        db.commit()
