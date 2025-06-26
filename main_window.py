@@ -1,6 +1,7 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import messagebox
 from analysis_window import AnalysisWindow
+from check_window import ChecksWindow
 from cash_register_window import CashRegisterWindow
 from database_operation import Database
 from warehouse_window import WarehouseWindow
@@ -17,13 +18,16 @@ class App(tk.Tk):
         self.db = Database()
         self.child_windows = []
 
-        btn_cash = tk.Button(self, text="Касса", width=20, command=self.open_cash_register)
+        btn_cash = tk.Button(self, text="Касса", width=25, command=self.open_cash_register)
         btn_cash.pack(pady=5)
 
-        btn_warehouse = tk.Button(self, text="Склад", width=20, command=self.open_warehouse)
+        btn_warehouse = tk.Button(self, text="Склад", width=25, command=self.open_warehouse)
         btn_warehouse.pack(pady=5)
 
-        btn_analysis = tk.Button(self, text="Анализ", width=20, command=self.open_analysis)
+        btn_checks = tk.Button(self, text="Просмотр чеков (возврат)", width=25, command=self.open_checks)
+        btn_checks.pack(pady=5)
+
+        btn_analysis = tk.Button(self, text="Анализ", width=25, command=self.open_analysis)
         btn_analysis.pack(pady=5)
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -34,6 +38,10 @@ class App(tk.Tk):
 
     def open_warehouse(self):
         win = WarehouseWindow(self, self.db)
+        self.child_windows.append(win)
+
+    def open_checks(self):
+        win = ChecksWindow(self, self.db)
         self.child_windows.append(win)
 
     def open_analysis(self):

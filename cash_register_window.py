@@ -1,6 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
-from database_operation import Database
+from tkinter import messagebox
 from payment_window import PaymentWindow
 from utils import SortableTreeview, SearchPanel
 

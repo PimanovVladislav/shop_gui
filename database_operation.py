@@ -1,11 +1,26 @@
 import sqlite3
+import os
 from datetime import datetime
 
 DB_NAME = 'fish_store.db'
 
 class Database:
     def __init__(self):
-        self.conn = sqlite3.connect(DB_NAME)
+        # Определяем путь к системной директории
+        if os.name == 'nt':  # Windows
+            app_data_path = os.getenv('APPDATA')
+        else:  # Linux/macOS и другие
+            app_data_path = os.path.expanduser('~')
+            app_data_path = os.path.join(app_data_path, '.config')
+
+        # Создаем поддиректорию для приложения
+        db_dir = os.path.join(app_data_path, 'FishStore')
+        os.makedirs(db_dir, exist_ok=True)
+
+        # Полный путь к файлу БД
+        db_path = os.path.join(db_dir, 'fish_store.db')
+
+        self.conn = sqlite3.connect(db_path)
         self.create_tables()
 
     def create_tables(self):
@@ -17,7 +32,8 @@ class Database:
                 code TEXT,
                 buy_price REAL,
                 sale_price REAL,
-                amount INTEGER
+                amount INTEGER,
+                deleted INTEGER DEFAULT 0
             )
         ''')
         c.execute('''
@@ -57,17 +73,17 @@ class Database:
     # Методы для работы с таблицей products
     def get_all_products(self):
         c = self.conn.cursor()
-        c.execute("SELECT id, code, name, buy_price, sale_price, amount FROM products")
+        c.execute("SELECT id, code, name, buy_price, sale_price, amount FROM products WHERE deleted =0")
         return c.fetchall()
 
     def get_available_products(self):
         c = self.conn.cursor()
-        c.execute("SELECT id, code, name, buy_price, sale_price, amount FROM products WHERE amount > 0")
+        c.execute("SELECT id, code, name, buy_price, sale_price, amount FROM products WHERE amount > 0 AND deleted = 0")
         return c.fetchall()
 
     def get_not_available_products(self):
         c = self.conn.cursor()
-        c.execute("SELECT id, code, name, buy_price, sale_price, amount FROM products WHERE amount = 0")
+        c.execute("SELECT id, code, name, buy_price, sale_price, amount FROM products WHERE amount = 0 AND deleted = 0")
         return c.fetchall()
 
     def add_product(self, name, code, buy_price, sale_price, amount):
@@ -110,10 +126,41 @@ class Database:
         ''', (product_id, amount, id_check))
         self.conn.commit()
 
+    def get_sales_analysis(self, date_from: datetime, date_to: datetime):
+        """
+        Возвращает список кортежей с анализом продаж за период.
+        Каждый кортеж: (product_id, product_name, sold_qty, returned_qty, net_qty, stock_qty, sold_sum, returned_sum, net_sum)
+        """
+        c = self.conn.cursor()
+
+        # Приводим даты к строкам с временем для корректного сравнения
+        date_from_str = date_from.strftime("%Y-%m-%d 00:00:00")
+        date_to_str = date_to.strftime("%Y-%m-%d 23:59:59")
+
+        query = """
+            SELECT
+                p.code,
+                p.name,
+                IFNULL(SUM(CASE WHEN ch.status = 1 THEN cp.amount ELSE 0 END), 0) AS sold_qty,
+                IFNULL(SUM(CASE WHEN ch.status = 2 THEN cp.amount ELSE 0 END), 0) AS returned_qty,
+                IFNULL(SUM(CASE WHEN ch.status = 1 THEN cp.amount ELSE 0 END), 0) - IFNULL(SUM(CASE WHEN ch.status = 2 THEN cp.amount ELSE 0 END), 0) AS net_qty,
+                p.amount AS stock_qty,
+                IFNULL(SUM(CASE WHEN ch.status = 1 THEN cp.amount * p.sale_price ELSE 0 END), 0) AS sold_sum,
+                IFNULL(SUM(CASE WHEN ch.status = 2 THEN cp.amount * p.sale_price ELSE 0 END), 0) AS returned_sum,
+                IFNULL(SUM(CASE WHEN ch.status = 1 THEN cp.amount * p.sale_price ELSE 0 END), 0) - IFNULL(SUM(CASE WHEN ch.status = 2 THEN cp.amount * p.sale_price ELSE 0 END), 0) AS net_sum
+            FROM products p
+            JOIN check_products cp ON p.id = cp.product_id
+            JOIN checks ch ON cp.id_check = ch.id AND ch.date BETWEEN ? AND ?
+            GROUP BY p.id, p.name, p.amount
+            ORDER BY p.name
+        """
+        c.execute(query, (date_from_str, date_to_str))
+        return c.fetchall()
+
     def close(self):
         self.conn.close()
 
     def delete_product(self, product_id):
         cursor = self.conn.cursor()
-        cursor.execute("DELETE FROM products WHERE id = ?", (product_id,))
+        cursor.execute("UPDATE products SET deleted = 1 WHERE id = ?", (product_id,))
         self.conn.commit()

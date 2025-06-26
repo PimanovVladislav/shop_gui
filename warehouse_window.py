@@ -10,7 +10,7 @@ class WarehouseWindow(tk.Toplevel):
         super().__init__(master)
         self.db = db
         self.title("Склад")
-        self.geometry("700x400")
+        self.geometry("750x400")
         self.wm_iconbitmap("main_icon.ico")
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
