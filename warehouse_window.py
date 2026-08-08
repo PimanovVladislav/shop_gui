@@ -17,11 +17,9 @@ class WarehouseWindow(tk.Toplevel):
 
         self.all_products = []
 
-        # Поиск
         self.search_panel = SearchPanel(self, self.on_search)
         self.search_panel.pack(fill=tk.X, padx=5, pady=5)
 
-        # Таблица товаров с чекбоксами
         self.tree = SortableTreeview(
             self,
             columns=('check', 'id', 'code', 'name',
@@ -48,7 +46,6 @@ class WarehouseWindow(tk.Toplevel):
         self.tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=(0, 5))
         self.tree.setup_sorting()
 
-        # Кнопки
         btn_frame = tk.Frame(self)
         btn_frame.pack(fill=tk.X, padx=5, pady=5)
 
@@ -63,7 +60,6 @@ class WarehouseWindow(tk.Toplevel):
         tk.Button(btn_frame, text="Экспорт в Excel",
                   command=self.export_to_excel).pack(side=tk.LEFT, padx=2)
 
-        # Чекбоксы фильтрации
         self.available_var = tk.BooleanVar(value=False)
         self.not_available_var = tk.BooleanVar(value=False)
 
@@ -78,7 +74,6 @@ class WarehouseWindow(tk.Toplevel):
 
         self.refresh_products()
 
-    # ── Данные ───────────────────────────────────────
     def refresh_products(self):
         self.all_products = self.db.get_all_products()
         self.update_tree(self.all_products)
@@ -99,7 +94,6 @@ class WarehouseWindow(tk.Toplevel):
                     if any(query in str(f).lower() for f in p)]
         self.update_tree(filtered)
 
-    # ── CRUD ─────────────────────────────────────────
     def add_product(self):
         ProductEditWindow(self, self.db, self.refresh_products)
 
@@ -146,9 +140,8 @@ class WarehouseWindow(tk.Toplevel):
                    "Цена закупки", "Цена продажи", "Количество"]
         filepath = ExcelExporter.export_data(headers, rows, sheet_title="Склад")
         ExcelExporter.open_file(filepath)
-        messagebox.showinfo("Экспорт", f"Файл сохранён:\n{filepath}")
+        messagebox.showinfo("Экспорт", f"Файл сохранён: {filepath}")
 
-    # ── Фильтры ──────────────────────────────────────
     def on_filter_change(self):
         if self.available_var.get():
             if self.not_available_var.get():
@@ -163,6 +156,6 @@ class WarehouseWindow(tk.Toplevel):
         self.search_panel.clear()
 
     def on_close(self):
-        if hasattr(self.master, "child_windows"):
+        if hasattr(self.master, "child_windows") and self in self.master.child_windows:
             self.master.child_windows.remove(self)
         self.destroy()

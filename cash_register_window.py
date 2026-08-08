@@ -23,7 +23,6 @@ class CashRegisterWindow(tk.Toplevel):
         self.search_panel = SearchPanel(main_frame, self.on_search)
         self.search_panel.pack(fill=tk.X, padx=5, pady=5)
 
-        # Таблица товаров с чекбоксами (SortableTreeview — теперь Frame)
         self.products_tree = SortableTreeview(
             main_frame,
             columns=('check', 'code', 'name', 'price', 'amount'),
@@ -42,6 +41,9 @@ class CashRegisterWindow(tk.Toplevel):
         self.products_tree.column('amount', width=80)
         self.products_tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=(0, 5))
         self.products_tree.setup_sorting()
+
+        # Двойной клик по товару → добавить 1 шт. в корзину
+        self.products_tree.bind('<Double-1>', self._on_product_double_click)
 
         # ── Правая часть: корзина ─────────────────────
         right_frame = tk.Frame(self)
@@ -79,7 +81,6 @@ class CashRegisterWindow(tk.Toplevel):
                                       textvariable=self.qty_var, width=5)
         self.qty_spinbox.pack(side=tk.LEFT)
 
-        # Кнопки
         tk.Button(right_frame, text="Добавить в корзину",
                   command=self.add_to_cart).pack(pady=3)
 
@@ -92,8 +93,6 @@ class CashRegisterWindow(tk.Toplevel):
                   command=self.decrease_cart_qty).pack(side=tk.LEFT, padx=1)
         tk.Button(qty_edit_frame, text="+", width=2,
                   command=self.increase_cart_qty).pack(side=tk.LEFT, padx=1)
-        tk.Label(qty_edit_frame, text="(выберите строку)", fg="gray",
-                 font=("Arial", 8)).pack(side=tk.LEFT, padx=5)
 
         tk.Button(right_frame, text="Оформить продажу", command=self.checkout,
                   bg="#4CAF50", fg="white",
@@ -128,7 +127,44 @@ class CashRegisterWindow(tk.Toplevel):
                            for f in (p[1], p[2], p[4], p[5]))]
         self.update_tree(filtered)
 
-    # ── Добавление в корзину ─────────────────────────
+    # ── Двойной клик по товару → +1 в корзину ────────
+    def _on_product_double_click(self, event):
+        """Двойной клик по строке товара: добавить 1 единицу в корзину."""
+        region = self.products_tree.identify("region", event.x, event.y)
+        if region not in ("cell", "tree"):
+            return
+        rowid = self.products_tree.identify_row(event.y)
+        if not rowid:
+            return
+
+        try:
+            product_id = int(rowid)
+        except ValueError:
+            return
+        product = self.db.get_product_by_id(product_id)
+        if product is None:
+            return
+
+        qty = 1  # всегда 1 при двойном клике
+
+        if product[5] <= 0:
+            messagebox.showwarning("Внимание", "Товар закончился на складе.")
+            return
+
+        for idx, item in enumerate(self.cart):
+            if item[0] == product_id:
+                new_amount = item[3] + qty
+                if new_amount > product[5]:
+                    messagebox.showwarning("Внимание",
+                        f"Недостаточно на складе. Доступно: {product[5]}")
+                    return
+                self.cart[idx] = (product_id, product[1], product[4], new_amount)
+                break
+        else:
+            self.cart.append((product_id, product[1], product[4], qty))
+        self.refresh_cart()
+
+    # ── Добавление в корзину (кнопка) ────────────────
     def add_to_cart(self):
         selected = self.products_tree.selection()
         if not selected:
@@ -206,12 +242,13 @@ class CashRegisterWindow(tk.Toplevel):
             self.cart_tree.selection_set(children[idx])
 
     def on_cart_double_click(self, event):
+        """Двойной клик по ячейке «Кол-во» в корзине → редактирование."""
         region = self.cart_tree.identify("region", event.x, event.y)
         if region != "cell":
             return
         row_id = self.cart_tree.identify_row(event.y)
         column = self.cart_tree.identify_column(event.x)
-        if column != '#4':
+        if column != '#4':  # amount column
             return
         if not row_id:
             return
@@ -276,5 +313,6 @@ class CashRegisterWindow(tk.Toplevel):
         self.refresh_cart()
 
     def on_close(self):
-        self.master.child_windows.remove(self)
+        if hasattr(self.master, "child_windows") and self in self.master.child_windows:
+            self.master.child_windows.remove(self)
         self.destroy()

@@ -3,7 +3,6 @@ from tkinter import messagebox, simpledialog, ttk
 from datetime import datetime
 from utils import SortableTreeview, SearchPanel
 from database_operation import Database
-from excel_export import ExcelExporter
 
 
 class ChecksWindow(tk.Toplevel):
@@ -16,7 +15,8 @@ class ChecksWindow(tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
         style = ttk.Style(self)
-        style.configure("Treeview.Heading", font=('TkDefaultFont', 9, 'bold'), padding=(5, 8))
+        style.configure("Treeview.Heading",
+                        font=('TkDefaultFont', 9, 'bold'), padding=(5, 8))
 
         main_frame = tk.Frame(self)
         main_frame.pack(fill=tk.BOTH, expand=True)
@@ -24,28 +24,33 @@ class ChecksWindow(tk.Toplevel):
         self.search_panel = SearchPanel(main_frame, self.on_search)
         self.search_panel.pack(fill=tk.X, padx=5, pady=5)
 
+        # ── Левая панель: чеки (без чекбоксов) ────────
         left_panel = tk.Frame(main_frame)
         left_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         self.checks_tree = SortableTreeview(
             left_panel,
-            columns=('id', 'date', 'status', 'payment_type', 'sum', 'payed_sum', 'refused_sum'),
+            columns=('id', 'date', 'status', 'payment_type',
+                     'sum', 'payed_sum', 'refused_sum'),
             show='headings',
             checkbox_column=False
         )
-        col_widths = {'id': 50, 'date': 130, 'status': 120, 'payment_type': 100,
-                      'sum': 80, 'payed_sum': 80, 'refused_sum': 80}
-        headers = [('id', 'ID'), ('date', 'Дата'), ('status', 'Статус'),
-                   ('payment_type', 'Тип оплаты'), ('sum', 'Сумма'),
-                   ('payed_sum', 'Внесено'), ('refused_sum', 'Возвращено')]
+        col_widths = {'id': 50, 'date': 130, 'status': 120,
+                      'payment_type': 100, 'sum': 80,
+                      'payed_sum': 80, 'refused_sum': 80}
+        headers = [('id', 'ID'), ('date', 'Дата'),
+                   ('status', 'Статус'), ('payment_type', 'Тип оплаты'),
+                   ('sum', 'Сумма'), ('payed_sum', 'Внесено'),
+                   ('refused_sum', 'Возвращено')]
         for col, colname in headers:
             self.checks_tree.heading(col, text=colname)
-            self.checks_tree.column(col, width=col_widths[col], anchor=tk.CENTER)
+            self.checks_tree.column(col, width=col_widths[col],
+                                    anchor=tk.CENTER)
         self.checks_tree.setup_sorting()
         self.checks_tree.bind('<<TreeviewSelect>>', self.on_check_selected)
         self.checks_tree.pack(fill=tk.BOTH, expand=True)
-        self.checks_tree.vsb.pack(side=tk.RIGHT, fill=tk.Y)
 
+        # ── Правая панель: товары чека ────────────────
         right_panel = tk.Frame(main_frame)
         right_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
@@ -71,26 +76,20 @@ class ChecksWindow(tk.Toplevel):
         self.products_tree.column('total_price', width=80, anchor=tk.E)
         self.products_tree.setup_sorting()
         self.products_tree.pack(fill=tk.BOTH, expand=True)
-        self.products_tree.vsb.pack(side=tk.RIGHT, fill=tk.Y)
 
+        # Кнопки возврата
         btn_frame = tk.Frame(right_panel)
         btn_frame.pack(fill=tk.X, pady=5)
 
-        tk.Button(btn_frame, text="Выбрать всё",
-                  command=lambda: self.products_tree.check_all()).pack(side=tk.LEFT, padx=2)
-        tk.Button(btn_frame, text="Снять всё",
-                  command=lambda: self.products_tree.uncheck_all()).pack(side=tk.LEFT, padx=2)
-
-        self.btn_return_selected = tk.Button(btn_frame, text="Возврат выбранных",
-                                             command=self.return_selected_products)
+        self.btn_return_selected = tk.Button(
+            btn_frame, text="Возврат выбранных",
+            command=self.return_selected_products)
         self.btn_return_selected.pack(side=tk.LEFT, padx=5)
 
-        self.btn_return_all = tk.Button(btn_frame, text="Возврат всего чека",
-                                        command=self.return_entire_check)
+        self.btn_return_all = tk.Button(
+            btn_frame, text="Возврат всего чека",
+            command=self.return_entire_check)
         self.btn_return_all.pack(side=tk.LEFT, padx=5)
-
-        tk.Button(btn_frame, text="Экспорт в Excel",
-                  command=self.export_to_excel).pack(side=tk.LEFT, padx=5)
 
         self.current_check_id = None
 
@@ -99,15 +98,16 @@ class ChecksWindow(tk.Toplevel):
 
         self.on_search('')
 
+    # ── Загрузка данных ──────────────────────────────
     def refresh_checks(self):
-        for i in self.checks_tree.get_children():
-            self.checks_tree.delete(i)
+        self.checks_tree.delete(*self.checks_tree.get_children())
         c = self.db.conn.cursor()
         c.execute(
             "SELECT checks.id, strftime('%d.%m.%Y %H:%M', checks.date), "
             "checks.status, payment_type.name, "
             "checks.sum, checks.payed_sum, checks.refused_sum "
-            "FROM checks LEFT JOIN payment_type ON checks.payment_type = payment_type.id "
+            "FROM checks LEFT JOIN payment_type "
+            "ON checks.payment_type = payment_type.id "
             "ORDER BY checks.date DESC"
         )
         rows = c.fetchall()
@@ -143,9 +143,10 @@ class ChecksWindow(tk.Toplevel):
             cp_id, name, code, amount, price = r
             total_price = price * amount
             self.products_tree.insert('', 'end', iid=str(cp_id),
-                                      values=(name, code, amount, f"{price:.2f}", f"{total_price:.2f}"))
+                values=(name, code, amount, f"{price:.2f}", f"{total_price:.2f}"))
 
     def on_product_double_click(self, event):
+        """Двойной клик: по колонке «Количество» → диалог изменения."""
         region = self.products_tree.identify("region", event.x, event.y)
         if region != "cell":
             return
@@ -155,6 +156,7 @@ class ChecksWindow(tk.Toplevel):
             return
 
         col_num = int(column.replace('#', ''))
+        # Колонка «Количество» — #4 (check=1, name=2, code=3, amount=4)
         if col_num == 4:
             current_vals = self.products_tree.item(rowid, 'values')
             current_amount = current_vals[3]
@@ -172,6 +174,7 @@ class ChecksWindow(tk.Toplevel):
             new_vals[5] = f"{total_price:.2f}"
             self.products_tree.item(rowid, values=new_vals)
 
+    # ── Возврат ──────────────────────────────────────
     def return_selected_products(self):
         if not self.current_check_id:
             messagebox.showwarning("Внимание", "Выберите чек.")
@@ -179,11 +182,13 @@ class ChecksWindow(tk.Toplevel):
 
         checked = self.products_tree.get_checked_iids()
         if not checked:
-            messagebox.showwarning("Внимание", "Отметьте товары для возврата (колонка ☐).")
+            messagebox.showwarning("Внимание",
+                                   "Отметьте товары для возврата (колонка ☐).")
             return
 
         c = self.db.conn.cursor()
-        c.execute("SELECT payment_type FROM checks WHERE id = ?", (self.current_check_id,))
+        c.execute("SELECT payment_type FROM checks WHERE id = ?",
+                  (self.current_check_id,))
         row = c.fetchone()
         if not row:
             messagebox.showerror("Ошибка", "Чек не найден.")
@@ -194,10 +199,8 @@ class ChecksWindow(tk.Toplevel):
         c.execute(
             "INSERT INTO checks (date, status, payment_type, sum, payed_sum, refused_sum) "
             "VALUES (?, ?, ?, 0, 0, 0)",
-            (now_str, 2, payment_type)
-        )
+            (now_str, 2, payment_type))
         new_check_id = c.lastrowid
-
         total_refund_sum = 0
 
         for cp_id in checked:
@@ -205,31 +208,28 @@ class ChecksWindow(tk.Toplevel):
             amount_to_return = int(vals[3])
             if amount_to_return <= 0:
                 continue
-
-            c.execute("SELECT product_id FROM check_products WHERE id = ?", (cp_id,))
+            c.execute(
+                "SELECT product_id FROM check_products WHERE id = ?", (cp_id,))
             product_row = c.fetchone()
             if not product_row:
                 continue
             product_id = product_row[0]
-
             c.execute(
-                "INSERT INTO check_products (id_check, product_id, amount) VALUES (?, ?, ?)",
-                (new_check_id, product_id, amount_to_return)
-            )
-
+                "INSERT INTO check_products (id_check, product_id, amount) "
+                "VALUES (?, ?, ?)",
+                (new_check_id, product_id, amount_to_return))
             c.execute("SELECT amount FROM products WHERE id = ?", (product_id,))
             current_amount = c.fetchone()[0]
             c.execute("UPDATE products SET amount = ? WHERE id = ?",
                       (current_amount + amount_to_return, product_id))
-
             price = float(vals[4])
             total_refund_sum += price * amount_to_return
 
         c.execute("UPDATE checks SET refused_sum = ?, sum = ? WHERE id = ?",
                   (total_refund_sum, -total_refund_sum, new_check_id))
-
         self.db.conn.commit()
-        messagebox.showinfo("Успех", f"Создан чек возврата №{new_check_id} на сумму {total_refund_sum:.2f}.")
+        messagebox.showinfo("Успех",
+            f"Создан чек возврата №{new_check_id} на сумму {total_refund_sum:.2f}.")
         self.refresh_checks()
 
     def return_entire_check(self):
@@ -238,7 +238,8 @@ class ChecksWindow(tk.Toplevel):
             return
 
         c = self.db.conn.cursor()
-        c.execute("SELECT payment_type FROM checks WHERE id = ?", (self.current_check_id,))
+        c.execute("SELECT payment_type FROM checks WHERE id = ?",
+                  (self.current_check_id,))
         row = c.fetchone()
         if not row:
             messagebox.showerror("Ошибка", "Чек не найден.")
@@ -249,8 +250,7 @@ class ChecksWindow(tk.Toplevel):
         c.execute(
             "INSERT INTO checks (date, status, payment_type, sum, payed_sum, refused_sum) "
             "VALUES (?, ?, ?, 0, 0, 0)",
-            (now_str, 2, payment_type)
-        )
+            (now_str, 2, payment_type))
         new_check_id = c.lastrowid
 
         total_refund_sum = 0
@@ -262,10 +262,11 @@ class ChecksWindow(tk.Toplevel):
             if amount <= 0:
                 continue
             c.execute(
-                "INSERT INTO check_products (id_check, product_id, amount) VALUES (?, ?, ?)",
-                (new_check_id, product_id, amount)
-            )
-            c.execute("SELECT amount, sale_price FROM products WHERE id = ?", (product_id,))
+                "INSERT INTO check_products (id_check, product_id, amount) "
+                "VALUES (?, ?, ?)",
+                (new_check_id, product_id, amount))
+            c.execute("SELECT amount, sale_price FROM products WHERE id = ?",
+                      (product_id,))
             current_amount, price = c.fetchone()
             c.execute("UPDATE products SET amount = ? WHERE id = ?",
                       (current_amount + amount, product_id))
@@ -273,11 +274,12 @@ class ChecksWindow(tk.Toplevel):
 
         c.execute("UPDATE checks SET refused_sum = ?, sum = ? WHERE id = ?",
                   (total_refund_sum, -total_refund_sum, new_check_id))
-
         self.db.conn.commit()
-        messagebox.showinfo("Успех", f"Создан чек возврата №{new_check_id} на сумму {total_refund_sum:.2f}.")
+        messagebox.showinfo("Успех",
+            f"Создан чек возврата №{new_check_id} на сумму {total_refund_sum:.2f}.")
         self.refresh_checks()
 
+    # ── Поиск ────────────────────────────────────────
     def on_search(self, query):
         query = query.strip().lower()
         self.checks_tree.delete(*self.checks_tree.get_children())
@@ -289,7 +291,8 @@ class ChecksWindow(tk.Toplevel):
             "SELECT checks.id, strftime('%d.%m.%Y %H:%M', checks.date), "
             "checks.status, payment_type.name, "
             "checks.sum, checks.payed_sum, checks.refused_sum "
-            "FROM checks LEFT JOIN payment_type ON checks.payment_type = payment_type.id "
+            "FROM checks LEFT JOIN payment_type "
+            "ON checks.payment_type = payment_type.id "
             "ORDER BY checks.date DESC"
         )
         rows = c.fetchall()
@@ -306,26 +309,7 @@ class ChecksWindow(tk.Toplevel):
                     r[3], f"{r[4]:.2f}", f"{r[5]:.2f}", f"{r[6]:.2f}"
                 ))
 
-    def export_to_excel(self):
-        checked = self.products_tree.get_checked_values()
-        if checked:
-            rows = checked
-        else:
-            rows = []
-            for iid in self.products_tree.get_children(''):
-                vals = list(self.products_tree.item(iid, 'values'))
-                rows.append(tuple(vals[1:]))
-
-        if not rows:
-            messagebox.showwarning("Внимание", "Нет данных для экспорта.")
-            return
-
-        headers = ['Название', 'Код', 'Количество', 'Цена', 'Стоимость']
-        sheet = f"Чек №{self.current_check_id}" if self.current_check_id else "Чек"
-        filepath = ExcelExporter.export_data(headers, rows, sheet_title=sheet)
-        ExcelExporter.open_file(filepath)
-        messagebox.showinfo("Экспорт", f"Файл сохранён: {filepath}")
-
     def on_close(self):
-        self.master.child_windows.remove(self)
+        if hasattr(self.master, "child_windows") and self in self.master.child_windows:
+            self.master.child_windows.remove(self)
         self.destroy()
