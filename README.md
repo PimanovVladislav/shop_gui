@@ -7,9 +7,13 @@ venv\Scripts\activate
 pip install -r requirements.txt
 4. Запустить
 py main_window.py
-P.S. Отключить окружение deactivate
-Удалить окружение rmdir /s venv
-
+P.S. 
+- Отключить окружение 
+deactivate
+- Удалить окружение
+rmdir /s venv
+- авто requirements
+pip freeze > requirements.txt
 
 Планируемые фичи:
 1. а

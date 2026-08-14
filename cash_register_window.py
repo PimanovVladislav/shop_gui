@@ -23,11 +23,14 @@ class CashRegisterWindow(tk.Toplevel):
         self.search_panel = SearchPanel(main_frame, self.on_search)
         self.search_panel.pack(fill=tk.X, padx=5, pady=5)
 
+        # Таблица товаров: чекбоксы есть, НО двойной клик НЕ переключает чекбокс —
+        # он добавляет товар в корзину (см. _on_product_double_click)
         self.products_tree = SortableTreeview(
             main_frame,
             columns=('check', 'code', 'name', 'price', 'amount'),
             show='headings',
-            checkbox_column=True
+            checkbox_column=True,
+            double_click_check=False
         )
         self.products_tree.heading('check', text='☐')
         self.products_tree.heading('code', text='Код')
@@ -51,11 +54,14 @@ class CashRegisterWindow(tk.Toplevel):
 
         tk.Label(right_frame, text="Корзина", font=("Arial", 12, "bold")).pack()
 
+        # Корзина: двойной клик по ячейке «Кол-во» = редактирование,
+        # поэтому двойной клик не переключает чекбокс
         self.cart_tree = SortableTreeview(
             right_frame,
             columns=('check', 'name', 'price', 'amount', 'sum'),
             show='headings',
             checkbox_column=True,
+            double_click_check=False,
             height=12
         )
         self.cart_tree.heading('check', text='☐')
@@ -130,14 +136,12 @@ class CashRegisterWindow(tk.Toplevel):
 
     # ── Двойной клик по товару → +1 в корзину ────────
     def _on_product_double_click(self, event):
-        """Двойной клик по строке товара: добавить 1 единицу в корзину."""
         region = self.products_tree.identify("region", event.x, event.y)
         if region not in ("cell", "tree"):
             return
         rowid = self.products_tree.identify_row(event.y)
         if not rowid:
             return
-
         try:
             product_id = int(rowid)
         except ValueError:
@@ -145,13 +149,10 @@ class CashRegisterWindow(tk.Toplevel):
         product = self.db.get_product_by_id(product_id)
         if product is None:
             return
-
-        qty = 1  # всегда 1 при двойном клике
-
+        qty = 1
         if product[5] <= 0:
             messagebox.showwarning("Внимание", "Товар закончился на складе.", parent=self)
             return
-
         for idx, item in enumerate(self.cart):
             if item[0] == product_id:
                 new_amount = item[3] + qty
@@ -227,7 +228,8 @@ class CashRegisterWindow(tk.Toplevel):
         new_qty = old_qty + delta
         if new_qty <= 0:
             if messagebox.askyesno("Удаление",
-                                   "Количество стало 0. Удалить товар из корзины?", parent=self):
+                                   "Количество стало 0. Удалить товар из корзины?",
+                                   parent=self):
                 del self.cart[idx]
                 self.refresh_cart()
             return
@@ -243,13 +245,12 @@ class CashRegisterWindow(tk.Toplevel):
             self.cart_tree.selection_set(children[idx])
 
     def on_cart_double_click(self, event):
-        """Двойной клик по ячейке «Кол-во» в корзине → редактирование."""
         region = self.cart_tree.identify("region", event.x, event.y)
         if region != "cell":
             return
         row_id = self.cart_tree.identify_row(event.y)
         column = self.cart_tree.identify_column(event.x)
-        if column != '#4':  # amount column
+        if column != '#4':
             return
         if not row_id:
             return

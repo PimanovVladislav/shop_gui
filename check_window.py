@@ -55,11 +55,14 @@ class ChecksWindow(tk.Toplevel):
         right_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         cols = ('check', 'name', 'code', 'amount', 'price', 'total_price')
+        # Двойной клик по «Количество» = диалог изменения,
+        # поэтому двойной клик НЕ переключает чекбокс
         self.products_tree = SortableTreeview(
             right_panel,
             columns=cols,
             show='headings',
-            checkbox_column=True
+            checkbox_column=True,
+            double_click_check=False
         )
         self.products_tree.heading('check', text='☐')
         self.products_tree.heading('name', text='Название')
@@ -98,7 +101,6 @@ class ChecksWindow(tk.Toplevel):
 
         self.on_search('')
 
-    # ── Загрузка данных ──────────────────────────────
     def refresh_checks(self):
         self.checks_tree.delete(*self.checks_tree.get_children())
         c = self.db.conn.cursor()
@@ -146,7 +148,6 @@ class ChecksWindow(tk.Toplevel):
                 values=(name, code, amount, f"{price:.2f}", f"{total_price:.2f}"))
 
     def on_product_double_click(self, event):
-        """Двойной клик: по колонке «Количество» → диалог изменения."""
         region = self.products_tree.identify("region", event.x, event.y)
         if region != "cell":
             return
@@ -154,9 +155,7 @@ class ChecksWindow(tk.Toplevel):
         column = self.products_tree.identify_column(event.x)
         if not rowid or not column:
             return
-
         col_num = int(column.replace('#', ''))
-        # Колонка «Количество» — #4 (check=1, name=2, code=3, amount=4)
         if col_num == 4:
             current_vals = self.products_tree.item(rowid, 'values')
             current_amount = current_vals[3]
@@ -174,18 +173,16 @@ class ChecksWindow(tk.Toplevel):
             new_vals[5] = f"{total_price:.2f}"
             self.products_tree.item(rowid, values=new_vals)
 
-    # ── Возврат ──────────────────────────────────────
     def return_selected_products(self):
         if not self.current_check_id:
             messagebox.showwarning("Внимание", "Выберите чек.", parent=self)
             return
-
         checked = self.products_tree.get_checked_iids()
         if not checked:
             messagebox.showwarning("Внимание",
-                                   "Отметьте товары для возврата (колонка ☐).", parent=self)
+                                   "Отметьте товары для возврата (колонка ☐).",
+                                   parent=self)
             return
-
         c = self.db.conn.cursor()
         c.execute("SELECT payment_type FROM checks WHERE id = ?",
                   (self.current_check_id,))
@@ -194,7 +191,6 @@ class ChecksWindow(tk.Toplevel):
             messagebox.showerror("Ошибка", "Чек не найден.", parent=self)
             return
         payment_type = row[0]
-
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         c.execute(
             "INSERT INTO checks (date, status, payment_type, sum, payed_sum, refused_sum) "
@@ -202,7 +198,6 @@ class ChecksWindow(tk.Toplevel):
             (now_str, 2, payment_type))
         new_check_id = c.lastrowid
         total_refund_sum = 0
-
         for cp_id in checked:
             vals = self.products_tree.item(cp_id, 'values')
             amount_to_return = int(vals[3])
@@ -224,19 +219,18 @@ class ChecksWindow(tk.Toplevel):
                       (current_amount + amount_to_return, product_id))
             price = float(vals[4])
             total_refund_sum += price * amount_to_return
-
         c.execute("UPDATE checks SET refused_sum = ?, sum = ? WHERE id = ?",
                   (total_refund_sum, -total_refund_sum, new_check_id))
         self.db.conn.commit()
         messagebox.showinfo("Успех",
-            f"Создан чек возврата №{new_check_id} на сумму {total_refund_sum:.2f}.", parent=self)
+            f"Создан чек возврата №{new_check_id} на сумму {total_refund_sum:.2f}.",
+            parent=self)
         self.refresh_checks()
 
     def return_entire_check(self):
         if not self.current_check_id:
             messagebox.showwarning("Внимание", "Выберите чек.", parent=self)
             return
-
         c = self.db.conn.cursor()
         c.execute("SELECT payment_type FROM checks WHERE id = ?",
                   (self.current_check_id,))
@@ -245,19 +239,16 @@ class ChecksWindow(tk.Toplevel):
             messagebox.showerror("Ошибка", "Чек не найден.", parent=self)
             return
         payment_type = row[0]
-
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         c.execute(
             "INSERT INTO checks (date, status, payment_type, sum, payed_sum, refused_sum) "
             "VALUES (?, ?, ?, 0, 0, 0)",
             (now_str, 2, payment_type))
         new_check_id = c.lastrowid
-
         total_refund_sum = 0
         c.execute("SELECT product_id, amount FROM check_products WHERE id_check = ?",
                   (self.current_check_id,))
         rows = c.fetchall()
-
         for product_id, amount in rows:
             if amount <= 0:
                 continue
@@ -271,21 +262,19 @@ class ChecksWindow(tk.Toplevel):
             c.execute("UPDATE products SET amount = ? WHERE id = ?",
                       (current_amount + amount, product_id))
             total_refund_sum += price * amount
-
         c.execute("UPDATE checks SET refused_sum = ?, sum = ? WHERE id = ?",
                   (total_refund_sum, -total_refund_sum, new_check_id))
         self.db.conn.commit()
         messagebox.showinfo("Успех",
-            f"Создан чек возврата №{new_check_id} на сумму {total_refund_sum:.2f}.", parent=self)
+            f"Создан чек возврата №{new_check_id} на сумму {total_refund_sum:.2f}.",
+            parent=self)
         self.refresh_checks()
 
-    # ── Поиск ────────────────────────────────────────
     def on_search(self, query):
         query = query.strip().lower()
         self.checks_tree.delete(*self.checks_tree.get_children())
         self.products_tree.delete(*self.products_tree.get_children())
         self.products_tree.clear_checks()
-
         c = self.db.conn.cursor()
         c.execute(
             "SELECT checks.id, strftime('%d.%m.%Y %H:%M', checks.date), "

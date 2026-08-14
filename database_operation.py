@@ -22,6 +22,7 @@ class Database:
 
         self.conn = sqlite3.connect(db_path)
         self.create_tables()
+        self._migrate()
 
     def create_tables(self):
         c = self.conn.cursor()
@@ -51,6 +52,7 @@ class Database:
                 sum REAL,
                 payed_sum REAL,
                 refused_sum REAL,
+                receipt_text TEXT DEFAULT '',
                 FOREIGN KEY(payment_type) REFERENCES payment_type(id)
             )
         ''')
@@ -69,6 +71,15 @@ class Database:
         if c.fetchone()[0] == 0:
             c.executemany("INSERT INTO payment_type (name) VALUES (?)", [('Наличные',), ('Карта',), ('Электронный кошелек',)])
         self.conn.commit()
+
+    def _migrate(self):
+        """Добавляет колонку receipt_text, если её ещё нет (для старых БД)."""
+        c = self.conn.cursor()
+        c.execute("PRAGMA table_info(checks)")
+        cols = [row[1] for row in c.fetchall()]
+        if 'receipt_text' not in cols:
+            c.execute("ALTER TABLE checks ADD COLUMN receipt_text TEXT DEFAULT ''")
+            self.conn.commit()
 
     # Методы для работы с таблицей products
     def get_all_products(self):
@@ -99,13 +110,13 @@ class Database:
 
     def get_product_by_id(self, product_id):
         c = self.conn.cursor()
-        c.execute("SELECT * FROM products WHERE id = ?", (product_id,))
+        c.execute("SELECT* FROM products WHERE id = ?", (product_id,))
         return c.fetchone()
 
     # Методы для работы с payment_type
     def get_payment_types(self):
         c = self.conn.cursor()
-        c.execute("SELECT * FROM payment_type")
+        c.execute("SELECT* FROM payment_type")
         return c.fetchall()
 
     # Методы для работы с чеками
@@ -126,6 +137,20 @@ class Database:
         ''', (product_id, amount, id_check))
         self.conn.commit()
 
+    def save_receipt_text(self, check_id, receipt_text):
+        """Сохраняет текст чека в БД."""
+        c = self.conn.cursor()
+        c.execute("UPDATE checks SET receipt_text = ? WHERE id = ?",
+                  (receipt_text, check_id))
+        self.conn.commit()
+
+    def get_receipt_text(self, check_id):
+        """Возвращает (date, receipt_text) для чека по id."""
+        c = self.conn.cursor()
+        c.execute("SELECT date, receipt_text FROM checks WHERE id = ?", (check_id,))
+        row = c.fetchone()
+        return row
+
     def get_sales_analysis(self, date_from: datetime, date_to: datetime):
         """
         Возвращает список кортежей с анализом продаж за период.
@@ -145,9 +170,9 @@ class Database:
                 IFNULL(SUM(CASE WHEN ch.status = 2 THEN cp.amount ELSE 0 END), 0) AS returned_qty,
                 IFNULL(SUM(CASE WHEN ch.status = 1 THEN cp.amount ELSE 0 END), 0) - IFNULL(SUM(CASE WHEN ch.status = 2 THEN cp.amount ELSE 0 END), 0) AS net_qty,
                 p.amount AS stock_qty,
-                IFNULL(SUM(CASE WHEN ch.status = 1 THEN cp.amount * p.sale_price ELSE 0 END), 0) AS sold_sum,
-                IFNULL(SUM(CASE WHEN ch.status = 2 THEN cp.amount * p.sale_price ELSE 0 END), 0) AS returned_sum,
-                IFNULL(SUM(CASE WHEN ch.status = 1 THEN cp.amount * p.sale_price ELSE 0 END), 0) - IFNULL(SUM(CASE WHEN ch.status = 2 THEN cp.amount * p.sale_price ELSE 0 END), 0) AS net_sum
+                IFNULL(SUM(CASE WHEN ch.status = 1 THEN cp.amount* p.sale_price ELSE 0 END), 0) AS sold_sum,
+                IFNULL(SUM(CASE WHEN ch.status = 2 THEN cp.amount* p.sale_price ELSE 0 END), 0) AS returned_sum,
+                IFNULL(SUM(CASE WHEN ch.status = 1 THEN cp.amount *p.sale_price ELSE 0 END), 0) - IFNULL(SUM(CASE WHEN ch.status = 2 THEN cp.amount* p.sale_price ELSE 0 END), 0) AS net_sum
             FROM products p
             JOIN check_products cp ON p.id = cp.product_id
             JOIN checks ch ON cp.id_check = ch.id AND ch.date BETWEEN ? AND ?
