@@ -100,7 +100,7 @@ class AnalysisWindow(tk.Toplevel):
 
         if date_from > date_to:
             messagebox.showerror("Ошибка",
-                                 "Дата начала не может быть позже даты конца.")
+                                 "Дата начала не может быть позже даты конца.", parent=self)
             return
 
         rows = self.db.get_sales_analysis(date_from, date_to)
@@ -162,13 +162,13 @@ class AnalysisWindow(tk.Toplevel):
         checked = self.tree.get_checked_values()
         rows = checked if checked else self.all_rows
         if not rows:
-            messagebox.showwarning("Внимание", "Нет данных для экспорта.")
+            messagebox.showwarning("Внимание", "Нет данных для экспорта.", parent=self)
             return
         headers = ["Код товара", "Наименование", "Продано шт.", "Возврат шт.",
                    "Итого шт.", "Остаток", "Сумма продаж", "Сумма возвратов", "Итого сумма"]
         filepath = ExcelExporter.export_data(headers, rows, sheet_title="Анализ продаж")
         ExcelExporter.open_file(filepath)
-        messagebox.showinfo("Экспорт", f"Файл сохранён:\n{filepath}")
+        messagebox.showinfo("Экспорт", f"Файл сохранён:\n{filepath}", parent=self)
 
     def on_close(self):
         # Защита: проверяем наличие окна в списке child_windows

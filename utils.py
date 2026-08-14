@@ -2,15 +2,133 @@ import tkinter as tk
 from tkinter import ttk
 
 
+def bind_entry_shortcuts(widget):
+    """Привязывает Ctrl+C/V/X/Z/Y/A к Entry/Spinbox с собственной историей undo/redo.
+
+    ВАЖНО: tk.Entry и tk.Spinbox НЕ поддерживают опцию undo (в отличие от tk.Text),
+    поэтому undo/redo реализованы вручную через стеки состояний.
+    """
+    state = {'last': widget.get()}
+    undo_stack = []
+    redo_stack = []
+
+    def _record_change():
+        current = widget.get()
+        if current == state['last']:
+            return
+        undo_stack.append(state['last'])
+        if len(undo_stack) > 200:
+            undo_stack.pop(0)
+        redo_stack.clear()
+        state['last'] = current
+
+    def _copy(event):
+        try:
+            sel = widget.selection_get()
+        except Exception:
+            return 'break'
+        widget.clipboard_clear()
+        widget.clipboard_append(sel)
+        return 'break'
+
+    def _cut(event):
+        try:
+            sel = widget.selection_get()
+        except Exception:
+            return 'break'
+        widget.clipboard_clear()
+        widget.clipboard_append(sel)
+        try:
+            widget.delete(tk.SEL_FIRST, tk.SEL_LAST)
+        except Exception:
+            pass
+        _record_change()
+        return 'break'
+
+    def _paste(event):
+        try:
+            text = widget.clipboard_get()
+        except Exception:
+            return 'break'
+        try:
+            if widget.selection_present():
+                widget.delete(tk.SEL_FIRST, tk.SEL_LAST)
+        except Exception:
+            pass
+        widget.insert(tk.INSERT, text)
+        _record_change()
+        return 'break'
+
+    def _undo(event):
+        if not undo_stack:
+            return 'break'
+        redo_stack.append(widget.get())
+        prev = undo_stack.pop()
+        widget.delete(0, tk.END)
+        widget.insert(0, prev)
+        state['last'] = prev
+        return 'break'
+
+    def _redo(event):
+        if not redo_stack:
+            return 'break'
+        undo_stack.append(widget.get())
+        nxt = redo_stack.pop()
+        widget.delete(0, tk.END)
+        widget.insert(0, nxt)
+        state['last'] = nxt
+        return 'break'
+
+    def _select_all(event):
+        try:
+            widget.select_range(0, tk.END)
+        except Exception:
+            try:
+                widget.selection_range(0, tk.END)
+            except Exception:
+                pass
+        try:
+            widget.icursor(tk.END)
+        except Exception:
+            pass
+        return 'break'
+
+    def _on_keyrelease(event):
+        _record_change()
+
+    widget.bind('<KeyRelease>', _on_keyrelease, add='+')
+    widget.bind('<Control-c>', _copy, add='+')
+    widget.bind('<Control-v>', _paste, add='+')
+    widget.bind('<Control-x>', _cut, add='+')
+    widget.bind('<Control-z>', _undo, add='+')
+    widget.bind('<Control-y>', _redo, add='+')
+    widget.bind('<Control-Shift-Z>', _redo, add='+')
+    widget.bind('<Control-a>', _select_all, add='+')
+
+
 class SortableTreeview(ttk.Frame):
-    """Treeview + Scrollbar. Чекбоксы, CTRL, сортировка, шапка-галочка."""
+    """Treeview + Scrollbar.
+
+    Возможности:
+      - сортировка по клику на заголовок
+      - чекбоксы (колонка ☐/☑) + клик по шапке = выбрать всё/снять всё
+      - CTRL-клик и двойной клик для чекбоксов
+      - горячие клавиши Ctrl+C/X/V/Z/A
+      - подсветка активной ячейки жёлтым, Ctrl+C копирует текст именно этой ячейки
+    """
 
     def __init__(self, master=None, checkbox_column=False, **kwargs):
         super().__init__(master)
         self._sort_column = None
         self._sort_reverse = False
         self._checkbox_column = checkbox_column
-        self._checked_items: set = set()
+        self._checked_items = set()
+        self._undo_stack = []
+
+        # Активная ячейка (для жёлтой подсветки и Ctrl+C ячейки)
+        self._active_cell = None       # (iid, col_name)
+        self._active_cell_text = ''
+        self._cell_pos = (0, 0)
 
         self.tree = ttk.Treeview(self, **kwargs)
         self.tree.grid(row=0, column=0, sticky="nsew")
@@ -23,12 +141,41 @@ class SortableTreeview(ttk.Frame):
         self.grid_columnconfigure(0, weight=1)
         self.tree["selectmode"] = "extended"
 
-        if checkbox_column:
-            self.tree.bind('<ButtonRelease-1>', self._on_click)
-            self.tree.bind('<Control-ButtonRelease-1>', self._on_ctrl_click)
-            self.tree.bind('<Double-1>', self._on_double_click)
+        # Оверлей для жёлтой подсветки активной ячейки
+        self._cell_highlight = tk.Label(
+            self, bg='#ffe08a', fg='#000000',
+            bd=0, relief='flat', highlightthickness=0, takefocus=0
+        )
+        try:
+            style = ttk.Style(self)
+            tree_font = style.lookup('Treeview', 'font')
+            if tree_font:
+                self._cell_highlight.config(font=tree_font)
+        except Exception:
+            pass
+        self._cell_highlight.place_forget()
+        self._cell_highlight.bind('<Button-1>', self._label_click)
+        self._cell_highlight.bind('<Double-1>', self._label_click)
+        self._cell_highlight.bind('<MouseWheel>', self._label_scroll)
 
-    # ── Прокси ────────────────────────────────────────────
+        # Отслеживание клика по ячейке (всегда)
+        self.tree.bind('<ButtonRelease-1>', self._on_cell_click, add='+')
+        self.tree.bind('<MouseWheel>', self._on_scroll_hide, add='+')
+        self.tree.bind('<Button-4>', self._on_scroll_hide, add='+')
+        self.tree.bind('<Button-5>', self._on_scroll_hide, add='+')
+
+        if checkbox_column:
+            self.tree.bind('<ButtonRelease-1>', self._on_click, add='+')
+            self.tree.bind('<Control-ButtonRelease-1>', self._on_ctrl_click, add='+')
+            self.tree.bind('<Double-1>', self._on_double_click, add='+')
+
+        self.tree.bind('<Control-c>', self._copy_selection)
+        self.tree.bind('<Control-x>', self._cut_selection)
+        self.tree.bind('<Control-v>', self._paste_selection)
+        self.tree.bind('<Control-z>', self._undo)
+        self.tree.bind('<Control-a>', self._select_all_rows)
+
+    # ── Прокси-методы ──────────────────────────────────────
     def heading(self, column, **kwargs):
         return self.tree.heading(column, **kwargs)
     def column(self, column, **kwargs):
@@ -40,6 +187,7 @@ class SortableTreeview(ttk.Frame):
             kwargs['values'] = values
         return self.tree.insert(parent, index, iid=iid, **kwargs)
     def delete(self, *items):
+        self._hide_cell_highlight()
         self.tree.delete(*items)
     def get_children(self, item=None):
         return self.tree.get_children(item)
@@ -71,11 +219,150 @@ class SortableTreeview(ttk.Frame):
         return self.tree.bind(sequence, func, add)
     def tag_configure(self, tagName, **kwargs):
         return self.tree.tag_configure(tagName, **kwargs)
+    def exists(self, item):
+        return self.tree.exists(item)
 
-    # ── Сортировка ────────────────────────────────────────
+    # ── Активная ячейка (жёлтая подсветка) ─────────────────
+    def _on_cell_click(self, event):
+        """Запоминает нажатую ячейку и подсвечивает её жёлтым."""
+        region = self.tree.identify('region', event.x, event.y)
+        if region != 'cell':
+            self._hide_cell_highlight()
+            return
+        iid = self.tree.identify_row(event.y)
+        col_id = self.tree.identify_column(event.x)
+        if not iid or not col_id:
+            self._hide_cell_highlight()
+            return
+        col_idx = int(col_id.replace('#', '')) - 1
+        cols = self.tree['columns']
+        if col_idx < 0 or col_idx >= len(cols):
+            self._hide_cell_highlight()
+            return
+        if self._checkbox_column and col_idx == 0:
+            self._hide_cell_highlight()
+            return
+        col_name = cols[col_idx]
+        text = self.tree.set(iid, col_name)
+        self._active_cell = (iid, col_name)
+        self._active_cell_text = text
+        self._show_cell_highlight(iid, col_id, col_name, text)
+
+    def _show_cell_highlight(self, iid, col_id, col_name, text):
+        try:
+            x, y, w, h = self.tree.bbox(iid, col_id)
+        except Exception:
+            return
+        self._cell_pos = (x, y)
+        anchor = self.tree.column(col_name, 'anchor')
+        if anchor not in ('w', 'center', 'e'):
+            anchor = 'w'
+        self._cell_highlight.config(text=text, anchor=anchor)
+        self._cell_highlight.place(x=x, y=y, width=w, height=h)
+        self._cell_highlight.lift()
+
+    def _hide_cell_highlight(self):
+        self._cell_highlight.place_forget()
+        self._active_cell = None
+        self._active_cell_text = ''
+
+    def _label_click(self, event):
+        cx, cy = self._cell_pos
+        self._cell_highlight.place_forget()
+        self._active_cell = None
+        self._active_cell_text = ''
+        self.tree.event_generate('<Button-1>', x=cx + event.x, y=cy + event.y)
+
+    def _label_scroll(self, event):
+        self._hide_cell_highlight()
+
+    def _on_scroll_hide(self, event):
+        self._hide_cell_highlight()
+
+    # ── Горячие клавиши таблицы ────────────────────────────
+    def _copy_selection(self, event=None):
+        """Ctrl+C: если есть активная ячейка — копирует её текст,
+        иначе — выделенные строки (через табуляцию)."""
+        if self._active_cell is not None:
+            self.tree.clipboard_clear()
+            self.tree.clipboard_append(self._active_cell_text)
+            return 'break'
+        sel = self.tree.selection()
+        if not sel:
+            return 'break'
+        lines = []
+        for iid in sel:
+            vals = self.tree.item(iid, 'values')
+            if self._checkbox_column and vals:
+                vals = vals[1:]
+            lines.append('\t'.join(str(v) for v in vals))
+        self.tree.clipboard_clear()
+        self.tree.clipboard_append('\n'.join(lines))
+        return 'break'
+
+    def _cut_selection(self, event=None):
+        sel = self.tree.selection()
+        if not sel:
+            return 'break'
+        entries = []
+        lines = []
+        for iid in sel:
+            vals = self.tree.item(iid, 'values')
+            idx = self.tree.index(iid)
+            entries.append((iid, idx, vals))
+            if self._checkbox_column and vals:
+                lines.append('\t'.join(str(v) for v in vals[1:]))
+            else:
+                lines.append('\t'.join(str(v) for v in vals))
+        self.tree.clipboard_clear()
+        self.tree.clipboard_append('\n'.join(lines))
+        for iid in sel:
+            self.tree.delete(iid)
+            self._checked_items.discard(iid)
+        self._undo_stack.append(('cut', entries))
+        return 'break'
+
+    def _paste_selection(self, event=None):
+        try:
+            text = self.tree.clipboard_get()
+        except Exception:
+            return 'break'
+        lines = [l for l in text.split('\n') if l.strip() != '']
+        if not lines:
+            return 'break'
+        added = []
+        for line in lines:
+            vals = list(line.split('\t'))
+            if self._checkbox_column:
+                vals = ['☐'] + vals
+            iid = self.tree.insert('', 'end', values=tuple(vals))
+            added.append(iid)
+        self._undo_stack.append(('paste', added))
+        return 'break'
+
+    def _undo(self, event=None):
+        if not self._undo_stack:
+            return 'break'
+        action, data = self._undo_stack.pop()
+        if action == 'cut':
+            for iid, idx, vals in data:
+                self.tree.insert('', idx, iid=iid, values=vals)
+                if self._checkbox_column and vals and vals[0] == '☑':
+                    self._checked_items.add(iid)
+        elif action == 'paste':
+            for iid in data:
+                if self.tree.exists(iid):
+                    self.tree.delete(iid)
+                    self._checked_items.discard(iid)
+        return 'break'
+
+    def _select_all_rows(self, event=None):
+        self.tree.selection_set(self.tree.get_children(''))
+        return 'break'
+
+    # ── Сортировка ─────────────────────────────────────────
     def setup_sorting(self):
         cols = self.tree["columns"]
-        # Шапка чекбокса (первая колонка) — всегда получает command
         if self._checkbox_column and len(cols) > 0:
             first_col = cols[0]
             self.tree.heading(
@@ -83,7 +370,6 @@ class SortableTreeview(ttk.Frame):
                 text=self.tree.heading(first_col, "text"),
                 command=self._on_checkbox_header_click
             )
-        # Остальные колонки — сортировка
         start = 1 if self._checkbox_column else 0
         for i in range(start, len(cols)):
             col = cols[i]
@@ -106,6 +392,7 @@ class SortableTreeview(ttk.Frame):
             self.check_all()
 
     def _on_heading_click(self, col):
+        self._hide_cell_highlight()
         data = []
         for iid in self.tree.get_children(""):
             val = self.tree.set(iid, col)
@@ -133,7 +420,7 @@ class SortableTreeview(ttk.Frame):
             else:
                 self.tree.heading(c, text=text)
 
-    # ── Чекбоксы ──────────────────────────────────────────
+    # ── Чекбоксы ───────────────────────────────────────────
     def _on_click(self, event):
         if not self._checkbox_column:
             return
@@ -209,6 +496,7 @@ class SearchPanel(tk.Frame):
         self.entry = tk.Entry(self)
         self.entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2, pady=2)
         self.entry.bind("<KeyRelease>", self._on_change)
+        bind_entry_shortcuts(self.entry)
         tk.Button(self, text="Очистить", command=self.clear).pack(side=tk.LEFT, padx=2, pady=2)
 
     def _on_change(self, event):

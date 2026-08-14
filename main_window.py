@@ -50,7 +50,7 @@ class App(tk.Tk):
 
     def on_close(self):
         if self.child_windows:
-            messagebox.showwarning("Внимание", "Закройте все окна перед выходом.")
+            messagebox.showwarning("Внимание", "Закройте все окна перед выходом.", parent=self)
             return
         self.db.close()
         self.destroy()

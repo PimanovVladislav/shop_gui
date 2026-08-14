@@ -116,8 +116,8 @@ class WarehouseWindow(tk.Toplevel):
         preview = ', '.join(names[:5])
         if len(names) > 5:
             preview += '...'
-        if not messagebox.askyesno("Подтверждение",
-                                   f"Удалить {len(checked)} товаров?\n{preview}"):
+        msg = "Удалить {0} товаров?\n{1}".format(len(checked), preview)
+        if not messagebox.askyesno("Подтверждение", msg):
             return
         for iid in checked:
             vals = self.tree.item(iid, 'values')
@@ -125,7 +125,7 @@ class WarehouseWindow(tk.Toplevel):
             try:
                 self.db.delete_product(product_id)
             except Exception as e:
-                messagebox.showerror("Ошибка", f"Не удалось удалить товар: {e}")
+                messagebox.showerror("Ошибка", "Не удалось удалить товар: {0}".format(e))
         self.refresh_products()
 
     def export_to_excel(self):

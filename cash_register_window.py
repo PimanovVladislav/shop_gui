@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox
 from payment_window import PaymentWindow
-from utils import SortableTreeview, SearchPanel
+from utils import SortableTreeview, SearchPanel, bind_entry_shortcuts
 
 
 class CashRegisterWindow(tk.Toplevel):
@@ -80,6 +80,7 @@ class CashRegisterWindow(tk.Toplevel):
         self.qty_spinbox = tk.Spinbox(qty_frame, from_=1, to=100,
                                       textvariable=self.qty_var, width=5)
         self.qty_spinbox.pack(side=tk.LEFT)
+        bind_entry_shortcuts(self.qty_spinbox)
 
         tk.Button(right_frame, text="Добавить в корзину",
                   command=self.add_to_cart).pack(pady=3)
@@ -148,7 +149,7 @@ class CashRegisterWindow(tk.Toplevel):
         qty = 1  # всегда 1 при двойном клике
 
         if product[5] <= 0:
-            messagebox.showwarning("Внимание", "Товар закончился на складе.")
+            messagebox.showwarning("Внимание", "Товар закончился на складе.", parent=self)
             return
 
         for idx, item in enumerate(self.cart):
@@ -156,7 +157,7 @@ class CashRegisterWindow(tk.Toplevel):
                 new_amount = item[3] + qty
                 if new_amount > product[5]:
                     messagebox.showwarning("Внимание",
-                        f"Недостаточно на складе. Доступно: {product[5]}")
+                        f"Недостаточно на складе. Доступно: {product[5]}", parent=self)
                     return
                 self.cart[idx] = (product_id, product[1], product[4], new_amount)
                 break
@@ -168,27 +169,27 @@ class CashRegisterWindow(tk.Toplevel):
     def add_to_cart(self):
         selected = self.products_tree.selection()
         if not selected:
-            messagebox.showwarning("Внимание", "Выберите товар для добавления.")
+            messagebox.showwarning("Внимание", "Выберите товар для добавления.", parent=self)
             return
         product_id = int(selected[0])
         product = self.db.get_product_by_id(product_id)
         if product is None:
-            messagebox.showerror("Ошибка", "Товар не найден.")
+            messagebox.showerror("Ошибка", "Товар не найден.", parent=self)
             return
         qty = self.qty_var.get()
         if qty <= 0:
-            messagebox.showwarning("Внимание", "Количество должно быть положительным.")
+            messagebox.showwarning("Внимание", "Количество должно быть положительным.", parent=self)
             return
         if qty > product[5]:
             messagebox.showwarning("Внимание",
-                f"Недостаточно на складе. Доступно: {product[5]}")
+                f"Недостаточно на складе. Доступно: {product[5]}", parent=self)
             return
         for idx, item in enumerate(self.cart):
             if item[0] == product_id:
                 new_amount = item[3] + qty
                 if new_amount > product[5]:
                     messagebox.showwarning("Внимание",
-                        f"Недостаточно на складе. Доступно: {product[5]}")
+                        f"Недостаточно на складе. Доступно: {product[5]}", parent=self)
                     return
                 self.cart[idx] = (product_id, product[1], product[4], new_amount)
                 break
@@ -217,7 +218,7 @@ class CashRegisterWindow(tk.Toplevel):
     def _modify_cart_qty(self, delta):
         selected = self.cart_tree.selection()
         if not selected:
-            messagebox.showwarning("Внимание", "Выберите товар в корзине.")
+            messagebox.showwarning("Внимание", "Выберите товар в корзине.", parent=self)
             return
         idx = self.cart_tree.index(selected[0])
         if idx < 0 or idx >= len(self.cart):
@@ -226,14 +227,14 @@ class CashRegisterWindow(tk.Toplevel):
         new_qty = old_qty + delta
         if new_qty <= 0:
             if messagebox.askyesno("Удаление",
-                                   "Количество стало 0. Удалить товар из корзины?"):
+                                   "Количество стало 0. Удалить товар из корзины?", parent=self):
                 del self.cart[idx]
                 self.refresh_cart()
             return
         product = self.db.get_product_by_id(product_id)
         if product and new_qty > product[5]:
             messagebox.showwarning("Внимание",
-                f"Недостаточно на складе. Доступно: {product[5]}")
+                f"Недостаточно на складе. Доступно: {product[5]}", parent=self)
             return
         self.cart[idx] = (product_id, name, price, new_qty)
         self.refresh_cart()
@@ -272,7 +273,7 @@ class CashRegisterWindow(tk.Toplevel):
                     raise ValueError
             except ValueError:
                 messagebox.showwarning("Внимание",
-                    "Количество должно быть положительным целым числом.")
+                    "Количество должно быть положительным целым числом.", parent=self)
                 self.editing_entry.focus()
                 return
             idx = self.cart_tree.index(row_id)
@@ -288,7 +289,7 @@ class CashRegisterWindow(tk.Toplevel):
                 return
             if new_qty > product[5]:
                 messagebox.showwarning("Внимание",
-                    f"Недостаточно на складе. Доступно: {product[5]}")
+                    f"Недостаточно на складе. Доступно: {product[5]}", parent=self)
                 self.editing_entry.focus()
                 return
             self.cart[idx] = (product_id, name, price, new_qty)
@@ -302,7 +303,7 @@ class CashRegisterWindow(tk.Toplevel):
 
     def checkout(self):
         if not self.cart:
-            messagebox.showwarning("Внимание", "Корзина пуста.")
+            messagebox.showwarning("Внимание", "Корзина пуста.", parent=self)
             return
         pay_window = PaymentWindow(self, self.db, self.cart,
                                    self.refresh_products, self.clear_cart)

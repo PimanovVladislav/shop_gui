@@ -177,13 +177,13 @@ class ChecksWindow(tk.Toplevel):
     # ── Возврат ──────────────────────────────────────
     def return_selected_products(self):
         if not self.current_check_id:
-            messagebox.showwarning("Внимание", "Выберите чек.")
+            messagebox.showwarning("Внимание", "Выберите чек.", parent=self)
             return
 
         checked = self.products_tree.get_checked_iids()
         if not checked:
             messagebox.showwarning("Внимание",
-                                   "Отметьте товары для возврата (колонка ☐).")
+                                   "Отметьте товары для возврата (колонка ☐).", parent=self)
             return
 
         c = self.db.conn.cursor()
@@ -191,7 +191,7 @@ class ChecksWindow(tk.Toplevel):
                   (self.current_check_id,))
         row = c.fetchone()
         if not row:
-            messagebox.showerror("Ошибка", "Чек не найден.")
+            messagebox.showerror("Ошибка", "Чек не найден.", parent=self)
             return
         payment_type = row[0]
 
@@ -229,12 +229,12 @@ class ChecksWindow(tk.Toplevel):
                   (total_refund_sum, -total_refund_sum, new_check_id))
         self.db.conn.commit()
         messagebox.showinfo("Успех",
-            f"Создан чек возврата №{new_check_id} на сумму {total_refund_sum:.2f}.")
+            f"Создан чек возврата №{new_check_id} на сумму {total_refund_sum:.2f}.", parent=self)
         self.refresh_checks()
 
     def return_entire_check(self):
         if not self.current_check_id:
-            messagebox.showwarning("Внимание", "Выберите чек.")
+            messagebox.showwarning("Внимание", "Выберите чек.", parent=self)
             return
 
         c = self.db.conn.cursor()
@@ -242,7 +242,7 @@ class ChecksWindow(tk.Toplevel):
                   (self.current_check_id,))
         row = c.fetchone()
         if not row:
-            messagebox.showerror("Ошибка", "Чек не найден.")
+            messagebox.showerror("Ошибка", "Чек не найден.", parent=self)
             return
         payment_type = row[0]
 
@@ -276,7 +276,7 @@ class ChecksWindow(tk.Toplevel):
                   (total_refund_sum, -total_refund_sum, new_check_id))
         self.db.conn.commit()
         messagebox.showinfo("Успех",
-            f"Создан чек возврата №{new_check_id} на сумму {total_refund_sum:.2f}.")
+            f"Создан чек возврата №{new_check_id} на сумму {total_refund_sum:.2f}.", parent=self)
         self.refresh_checks()
 
     # ── Поиск ────────────────────────────────────────
