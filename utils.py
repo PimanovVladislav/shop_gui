@@ -98,7 +98,8 @@ def bind_entry_shortcuts(widget):
 
 
 class SortableTreeview(ttk.Frame):
-    def __init__(self, master=None, checkbox_column=False, double_click_check=True, **kwargs):
+    def __init__(self, master=None, checkbox_column=False, double_click_check=True,
+                 search_change_callback=None, **kwargs):
         super().__init__(master)
         self._sort_column = None
         self._sort_reverse = False
@@ -114,6 +115,7 @@ class SortableTreeview(ttk.Frame):
         self._skip_release = False
         self._double_click_callback = None
         self._search_column = None
+        self._search_change_callback = search_change_callback
         self._heading_base = {}
         self._row_order = []
 
@@ -121,6 +123,7 @@ class SortableTreeview(ttk.Frame):
         self._style_name = 'Sortable.Treeview'
         try:
             style.configure(self._style_name, background='white', fieldbackground='white')
+            # отключаем стандартное синее выделение строк
             style.map(self._style_name,
                       background=[('selected', 'white')],
                       foreground=[('selected', 'black')])
@@ -137,9 +140,6 @@ class SortableTreeview(ttk.Frame):
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
         self.tree["selectmode"] = "extended"
-
-        self.tree.tag_configure('checked', background='#0078d7', foreground='white')
-        self.tree.tag_configure('active', background='#e0e0e0', foreground='black')
 
         # Оверлей жёлтой подсветки кликнутой ячейки
         self._cell_highlight = tk.Label(
@@ -173,6 +173,8 @@ class SortableTreeview(ttk.Frame):
         return self.tree.heading(column, **kwargs)
     def column(self, column, **kwargs):
         return self.tree.column(column, **kwargs)
+    def get_columns(self):
+        return self.tree['columns']
     def insert(self, parent, index, iid=None, **kwargs):
         values = kwargs.get('values', ())
         if self._checkbox_column:
@@ -183,7 +185,6 @@ class SortableTreeview(ttk.Frame):
             kwargs['values'] = values
         new_iid = self.tree.insert(parent, index, iid=iid, **kwargs)
         self._row_order.append(new_iid)
-        self._apply_row_tags(new_iid)
         return new_iid
     def delete(self, *items):
         self._hide_cell_highlight()
@@ -229,15 +230,6 @@ class SortableTreeview(ttk.Frame):
     def exists(self, item):
         return self.tree.exists(item)
 
-    # ── Подсветка строк ────────────────────────────────────
-    def _apply_row_tags(self, iid):
-        if iid in self._checked_items:
-            self.tree.item(iid, tags=('checked',))
-        elif iid == self._active_iid:
-            self.tree.item(iid, tags=('active',))
-        else:
-            self.tree.item(iid, tags=())
-
     # ── Клики ──────────────────────────────────────────────
     def _on_press(self, event):
         region = self.tree.identify('region', event.x, event.y)
@@ -255,7 +247,6 @@ class SortableTreeview(ttk.Frame):
         self._last_press = (now, iid, col_id)
 
     def _fire_double_click(self, event):
-        # скрываем жёлтую метку, чтобы не мешала (например entry в корзине)
         self._hide_cell_highlight()
         self._skip_release = True
         iid = self.tree.identify_row(event.y)
@@ -281,7 +272,6 @@ class SortableTreeview(ttk.Frame):
             return
         col_idx = int(col_id.replace('#', '')) - 1
         if self._checkbox_column and col_idx == 0:
-            # одиночный клик по галочке — переключаем чекбокс
             self._toggle_check(iid)
             self._hide_cell_highlight()
             return
@@ -291,12 +281,7 @@ class SortableTreeview(ttk.Frame):
             return
         col_name = cols[col_idx]
         text = self.tree.set(iid, col_name)
-        # активная строка красится серым СРАЗУ
-        if self._active_iid and self._active_iid != iid:
-            self._apply_row_tags(self._active_iid)
         self._active_iid = iid
-        self._apply_row_tags(iid)
-        # жёлтая метка на ячейке
         self._active_cell = (iid, col_name)
         self._active_cell_text = text
         self._show_cell_highlight(iid, col_id, col_name, text)
@@ -473,6 +458,8 @@ class SortableTreeview(ttk.Frame):
         else:
             self._search_column = col
         self._refresh_all_headings()
+        if self._search_change_callback is not None:
+            self._search_change_callback()
 
     def _cycle_sort(self, col):
         if self._sort_column == col:
@@ -549,8 +536,6 @@ class SortableTreeview(ttk.Frame):
             self._checked_items.discard(iid)
         else:
             self._checked_items.add(iid)
-        # цвет обновляется СРАЗУ
-        self._apply_row_tags(iid)
         values = list(self.tree.item(iid, 'values'))
         if values:
             values[0] = '\u2611' if iid in self._checked_items else '\u2610'
@@ -558,8 +543,6 @@ class SortableTreeview(ttk.Frame):
 
     def uncheck(self, iid):
         self._checked_items.discard(iid)
-        if self.tree.exists(iid):
-            self._apply_row_tags(iid)
 
     def get_checked_iids(self):
         return list(self._checked_items)
@@ -576,7 +559,6 @@ class SortableTreeview(ttk.Frame):
         for iid in self.tree.get_children(''):
             if iid not in self._checked_items:
                 self._checked_items.add(iid)
-                self._apply_row_tags(iid)
                 values = list(self.tree.item(iid, 'values'))
                 if values:
                     values[0] = '\u2611'
@@ -586,7 +568,6 @@ class SortableTreeview(ttk.Frame):
         for iid in self.tree.get_children(''):
             if iid in self._checked_items:
                 self._checked_items.discard(iid)
-                self._apply_row_tags(iid)
                 values = list(self.tree.item(iid, 'values'))
                 if values:
                     values[0] = '\u2610'
@@ -600,14 +581,9 @@ class SortableTreeview(ttk.Frame):
         return self._active_iid
 
     def set_active(self, iid):
-        if self._active_iid and self._active_iid != iid:
-            self._apply_row_tags(self._active_iid)
         self._active_iid = iid
-        self._apply_row_tags(iid)
 
     def clear_active(self):
-        if self._active_iid:
-            self._apply_row_tags(self._active_iid)
         self._active_iid = None
 
     # ── Поиск по колонке ───────────────────────────────────

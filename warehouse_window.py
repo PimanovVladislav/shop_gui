@@ -94,11 +94,14 @@ class WarehouseWindow(tk.Toplevel):
             self.update_tree(self.all_products)
             return
         search_col = self.tree.get_search_column()
-        if search_col is not None:
-            col_index = self.tree['columns'].index(search_col)
-            filtered = []
+        # индексы кортежа product: (id, code, name, buy_price, sale_price, amount)
+        mapping = {'id': 0, 'code': 1, 'name': 2,
+                   'buy_price': 3, 'sale_price': 4, 'amount': 5}
+        filtered = []
+        if search_col is not None and search_col in mapping:
+            src_index = mapping[search_col]
             for p in self.all_products:
-                if col_index < len(p) and query in str(p[col_index]).lower():
+                if src_index < len(p) and query in str(p[src_index]).lower():
                     filtered.append(p)
         else:
             filtered = [p for p in self.all_products

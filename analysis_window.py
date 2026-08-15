@@ -135,14 +135,19 @@ class AnalysisWindow(tk.Toplevel):
             self.update_summaries(self.all_rows)
             return
         search_col = self.tree.get_search_column()
-        if search_col is not None:
-            cols = self.tree['columns']
-            col_index = cols.index(search_col)
-            filtered = []
+        # row = (product_id, product_name, sold_qty, returned_qty,
+        #        net_qty, stock_qty, sold_sum, returned_sum, net_sum)
+        mapping = {
+            'product_id': 0, 'product_name': 1, 'sold_qty': 2,
+            'returned_qty': 3, 'net_qty': 4, 'stock_qty': 5,
+            'sold_sum': 6, 'returned_sum': 7, 'net_sum': 8,
+        }
+        filtered = []
+        if search_col is not None and search_col in mapping:
+            src_index = mapping[search_col]
             for row in self.all_rows:
-                if col_index - 1 < len(row):
-                    if query in str(row[col_index - 1]).lower():
-                        filtered.append(row)
+                if src_index < len(row) and query in str(row[src_index]).lower():
+                    filtered.append(row)
         else:
             filtered = [row for row in self.all_rows
                         if any(query in str(cell).lower() for cell in row)]
