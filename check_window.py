@@ -3,6 +3,7 @@ from tkinter import messagebox, simpledialog, ttk
 from datetime import datetime
 from utils import SortableTreeview, SearchPanel
 from database_operation import Database
+from receipt_window import ReceiptWindow
 
 
 class ChecksWindow(tk.Toplevel):
@@ -11,6 +12,7 @@ class ChecksWindow(tk.Toplevel):
         self.db = db
         self.title("Просмотр чеков (возврат)")
         self.geometry("1200x550")
+        self.state('zoomed')
         self.wm_iconbitmap("main_icon.ico")
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
@@ -24,7 +26,6 @@ class ChecksWindow(tk.Toplevel):
         self.search_panel = SearchPanel(main_frame, self.on_search)
         self.search_panel.pack(fill=tk.X, padx=5, pady=5)
 
-        # ── Левая панель: чеки (без чекбоксов) ────────
         left_panel = tk.Frame(main_frame)
         left_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
@@ -50,13 +51,10 @@ class ChecksWindow(tk.Toplevel):
         self.checks_tree.bind('<<TreeviewSelect>>', self.on_check_selected)
         self.checks_tree.pack(fill=tk.BOTH, expand=True)
 
-        # ── Правая панель: товары чека ────────────────
         right_panel = tk.Frame(main_frame)
         right_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         cols = ('check', 'name', 'code', 'amount', 'price', 'total_price')
-        # Двойной клик по «Количество» = диалог изменения,
-        # поэтому двойной клик НЕ переключает чекбокс
         self.products_tree = SortableTreeview(
             right_panel,
             columns=cols,
@@ -80,7 +78,6 @@ class ChecksWindow(tk.Toplevel):
         self.products_tree.setup_sorting()
         self.products_tree.pack(fill=tk.BOTH, expand=True)
 
-        # Кнопки возврата
         btn_frame = tk.Frame(right_panel)
         btn_frame.pack(fill=tk.X, pady=5)
 
@@ -93,6 +90,11 @@ class ChecksWindow(tk.Toplevel):
             btn_frame, text="Возврат всего чека",
             command=self.return_entire_check)
         self.btn_return_all.pack(side=tk.LEFT, padx=5)
+
+        self.btn_open_receipt = tk.Button(
+            btn_frame, text="Открыть чек",
+            command=self.open_receipt)
+        self.btn_open_receipt.pack(side=tk.LEFT, padx=5)
 
         self.current_check_id = None
 
@@ -120,7 +122,6 @@ class ChecksWindow(tk.Toplevel):
                 r[3], f"{r[4]:.2f}", f"{r[5]:.2f}", f"{r[6]:.2f}"
             ))
         self.products_tree.delete(*self.products_tree.get_children())
-        self.products_tree.clear_checks()
 
     def on_check_selected(self, event):
         selected = self.checks_tree.selection()
@@ -130,7 +131,6 @@ class ChecksWindow(tk.Toplevel):
         self.refresh_products(self.current_check_id)
 
     def refresh_products(self, check_id):
-        self.products_tree.clear_checks()
         self.products_tree.delete(*self.products_tree.get_children())
         c = self.db.conn.cursor()
         c.execute(
@@ -172,6 +172,20 @@ class ChecksWindow(tk.Toplevel):
             new_vals[3] = new_amount
             new_vals[5] = f"{total_price:.2f}"
             self.products_tree.item(rowid, values=new_vals)
+
+    def open_receipt(self):
+        if not self.current_check_id:
+            messagebox.showwarning("Внимание", "Выберите чек.", parent=self)
+            return
+        row = self.db.get_receipt_text(self.current_check_id)
+        if row is None:
+            messagebox.showwarning("Внимание", "Текст чека не найден.", parent=self)
+            return
+        date_str, receipt_text = row
+        if not receipt_text:
+            messagebox.showwarning("Внимание", "Текст чека не найден.", parent=self)
+            return
+        ReceiptWindow(self, self.current_check_id, date_str, receipt_text)
 
     def return_selected_products(self):
         if not self.current_check_id:
@@ -274,7 +288,6 @@ class ChecksWindow(tk.Toplevel):
         query = query.strip().lower()
         self.checks_tree.delete(*self.checks_tree.get_children())
         self.products_tree.delete(*self.products_tree.get_children())
-        self.products_tree.clear_checks()
         c = self.db.conn.cursor()
         c.execute(
             "SELECT checks.id, strftime('%d.%m.%Y %H:%M', checks.date), "

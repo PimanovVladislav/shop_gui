@@ -8,6 +8,7 @@ from warehouse_window import WarehouseWindow
 
 DB_NAME = 'fish_store.db'
 
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -49,9 +50,20 @@ class App(tk.Tk):
         self.child_windows.append(win)
 
     def on_close(self):
+        # Если открыты дочерние окна — спрашиваем подтверждение
         if self.child_windows:
-            messagebox.showwarning("Внимание", "Закройте все окна перед выходом.", parent=self)
-            return
+            if not messagebox.askyesno(
+                    "Подтверждение",
+                    "Открыты дочерние окна. Вы уверены, что хотите закрыть приложение?",
+                    parent=self):
+                return
+            # закрываем все дочерние окна
+            for win in list(self.child_windows):
+                try:
+                    win.destroy()
+                except Exception:
+                    pass
+            self.child_windows.clear()
         self.db.close()
         self.destroy()
 

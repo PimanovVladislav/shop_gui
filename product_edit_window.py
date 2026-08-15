@@ -4,7 +4,7 @@ from utils import bind_entry_shortcuts
 
 
 class SelectAllEntry(tk.Entry):
-    """Entry: одинарный клик выделяет весь текст, двойной ставит курсор."""
+    """Entry: single click selects all text, double click places cursor."""
 
     def __init__(self, master=None, **kwargs):
         super().__init__(master, **kwargs)
@@ -30,11 +30,18 @@ class SelectAllEntry(tk.Entry):
 
 
 class ProductEditWindow(tk.Toplevel):
-    def __init__(self, master, db, refresh_callback, product=None):
+    """Product add/edit window.
+
+    on_saved callback is called after successful save of the current product
+    (used to open the next window from the edit queue).
+    """
+
+    def __init__(self, master, db, refresh_callback, product=None, on_saved=None):
         super().__init__(master)
         self.db = db
         self.refresh_callback = refresh_callback
         self.product = product
+        self.on_saved = on_saved
 
         self.title("Редактирование товара" if product else "Добавление товара")
         self.geometry("400x300")
@@ -82,11 +89,9 @@ class ProductEditWindow(tk.Toplevel):
         btn_save = tk.Button(btn_frame, text="Сохранить", command=self.save)
         btn_save.pack(side=tk.LEFT, padx=5)
 
-        # Фокус на первое поле после показа окна
         self.after(50, self._focus_first_field)
 
     def _focus_first_field(self):
-        """Возвращает фокус на первое поле ввода этого окна."""
         try:
             self.name_entry.focus_force()
             self.name_entry.focus_set()
@@ -141,7 +146,11 @@ class ProductEditWindow(tk.Toplevel):
         else:
             self.db.add_product(name, code, buy_price, sale_price, amount)
         self.refresh_callback()
+        cb = self.on_saved
+        self.on_saved = None
         self.destroy()
+        if cb:
+            cb()
 
     def save_and_continue(self):
         data = self._validate_and_collect()
@@ -152,10 +161,10 @@ class ProductEditWindow(tk.Toplevel):
         self.db.add_product(name, code, buy_price, sale_price, amount)
         self.refresh_callback()
         self._clear_fields()
-        # Возвращаем фокус этому окну (а не главному)
-        self._focus_first_field()
-        messagebox.showinfo("Готово", "Товар добавлен. Можно вводить следующий.", parent=self)
+        messagebox.showinfo("Готово", "Товар добавлен. Можно вводить следующий.",
+                            parent=self)
         self._focus_first_field()
 
     def on_close(self):
+        self.on_saved = None
         self.destroy()

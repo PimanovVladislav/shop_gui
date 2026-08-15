@@ -11,10 +11,10 @@ class AnalysisWindow(tk.Toplevel):
         super().__init__(master)
         self.title("Анализ продаж")
         self.geometry("1000x650")
+        self.state('zoomed')
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.db = db
 
-        # Верхняя панель
         top_frame = tk.Frame(self)
         top_frame.pack(fill=tk.X, padx=10, pady=5)
 
@@ -36,7 +36,6 @@ class AnalysisWindow(tk.Toplevel):
         self.search_panel = SearchPanel(top_frame, search_callback=self.filter_rows)
         self.search_panel.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(20, 0))
 
-        # Таблица с чекбоксами
         columns = ("check", "product_id", "product_name", "sold_qty", "returned_qty",
                    "net_qty", "stock_qty", "sold_sum", "returned_sum", "net_sum")
         self.tree = SortableTreeview(
@@ -64,13 +63,11 @@ class AnalysisWindow(tk.Toplevel):
         self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         self.tree.setup_sorting()
 
-        # Кнопка экспорта
         btn_row = tk.Frame(self)
         btn_row.pack(fill=tk.X, padx=10, pady=(0, 5))
         tk.Button(btn_row, text="Экспорт в Excel",
                   command=self.export_to_excel).pack(side=tk.LEFT, padx=2)
 
-        # Итоги
         summary_frame = tk.Frame(self)
         summary_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
 
@@ -92,7 +89,6 @@ class AnalysisWindow(tk.Toplevel):
         self.refresh_data()
 
     def refresh_data(self):
-        self.tree.clear_checks()
         self.tree.delete(*self.tree.get_children())
 
         date_from = self.date_from.get_date()
@@ -100,7 +96,8 @@ class AnalysisWindow(tk.Toplevel):
 
         if date_from > date_to:
             messagebox.showerror("Ошибка",
-                                 "Дата начала не может быть позже даты конца.", parent=self)
+                                 "Дата начала не может быть позже даты конца.",
+                                 parent=self)
             return
 
         rows = self.db.get_sales_analysis(date_from, date_to)
@@ -127,7 +124,6 @@ class AnalysisWindow(tk.Toplevel):
         self.update_summaries(self.all_rows)
 
     def _display_rows(self, rows):
-        self.tree.clear_checks()
         self.tree.delete(*self.tree.get_children())
         for row in rows:
             self.tree.insert('', 'end', values=row)
@@ -138,8 +134,18 @@ class AnalysisWindow(tk.Toplevel):
             self._display_rows(self.all_rows)
             self.update_summaries(self.all_rows)
             return
-        filtered = [row for row in self.all_rows
-                    if any(query in str(cell).lower() for cell in row)]
+        search_col = self.tree.get_search_column()
+        if search_col is not None:
+            cols = self.tree['columns']
+            col_index = cols.index(search_col)
+            filtered = []
+            for row in self.all_rows:
+                if col_index - 1 < len(row):
+                    if query in str(row[col_index - 1]).lower():
+                        filtered.append(row)
+        else:
+            filtered = [row for row in self.all_rows
+                        if any(query in str(cell).lower() for cell in row)]
         self._display_rows(filtered)
         self.update_summaries(filtered)
 
@@ -171,7 +177,6 @@ class AnalysisWindow(tk.Toplevel):
         messagebox.showinfo("Экспорт", f"Файл сохранён:\n{filepath}", parent=self)
 
     def on_close(self):
-        # Защита: проверяем наличие окна в списке child_windows
         if hasattr(self.master, "child_windows") and self in self.master.child_windows:
             self.master.child_windows.remove(self)
         self.destroy()

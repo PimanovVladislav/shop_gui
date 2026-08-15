@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import messagebox
 from database_operation import Database
 from product_edit_window import ProductEditWindow
-from utils import SearchPanel, SortableTreeview
+from utils import SearchPanel, SortableTreeview, bind_entry_shortcuts
 from excel_export import ExcelExporter
 
 
@@ -12,10 +12,12 @@ class WarehouseWindow(tk.Toplevel):
         self.db = db
         self.title("Склад")
         self.geometry("900x500")
+        self.state('zoomed')
         self.wm_iconbitmap("main_icon.ico")
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self.all_products = []
+        self.edit_queue = []
 
         self.search_panel = SearchPanel(self, self.on_search)
         self.search_panel.pack(fill=tk.X, padx=5, pady=5)
@@ -36,12 +38,12 @@ class WarehouseWindow(tk.Toplevel):
         self.tree.heading('amount', text='Количество')
 
         self.tree.column('check', width=30, stretch=False)
-        self.tree.column('id', width=40)
-        self.tree.column('code', width=90)
-        self.tree.column('name', width=180)
-        self.tree.column('buy_price', width=90)
-        self.tree.column('sale_price', width=90)
-        self.tree.column('amount', width=80)
+        self.tree.column('id', width=50)
+        self.tree.column('code', width=100)
+        self.tree.column('name', width=200)
+        self.tree.column('buy_price', width=100)
+        self.tree.column('sale_price', width=100)
+        self.tree.column('amount', width=90)
 
         self.tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=(0, 5))
         self.tree.setup_sorting()
@@ -53,6 +55,8 @@ class WarehouseWindow(tk.Toplevel):
                   command=self.add_product).pack(side=tk.LEFT, padx=2)
         tk.Button(btn_frame, text="Редактировать",
                   command=self.edit_product).pack(side=tk.LEFT, padx=2)
+        tk.Button(btn_frame, text="Редактировать выбранные",
+                  command=self.edit_selected).pack(side=tk.LEFT, padx=2)
         tk.Button(btn_frame, text="Обновить",
                   command=self.refresh_products).pack(side=tk.LEFT, padx=2)
         tk.Button(btn_frame, text="Удалить выбранное",
@@ -80,7 +84,6 @@ class WarehouseWindow(tk.Toplevel):
         self.search_panel.clear()
 
     def update_tree(self, products):
-        self.tree.clear_checks()
         self.tree.delete(*self.tree.get_children())
         for p in products:
             self.tree.insert('', 'end', values=p)
@@ -90,8 +93,16 @@ class WarehouseWindow(tk.Toplevel):
         if not query:
             self.update_tree(self.all_products)
             return
-        filtered = [p for p in self.all_products
-                    if any(query in str(f).lower() for f in p)]
+        search_col = self.tree.get_search_column()
+        if search_col is not None:
+            col_index = self.tree['columns'].index(search_col)
+            filtered = []
+            for p in self.all_products:
+                if col_index < len(p) and query in str(p[col_index]).lower():
+                    filtered.append(p)
+        else:
+            filtered = [p for p in self.all_products
+                        if any(query in str(f).lower() for f in p)]
         self.update_tree(filtered)
 
     def add_product(self):
@@ -100,32 +111,63 @@ class WarehouseWindow(tk.Toplevel):
     def edit_product(self):
         selected = self.tree.selection()
         if not selected:
-            messagebox.showwarning("Внимание", "Выберите товар для редактирования.", parent=self)
+            messagebox.showwarning("Внимание", "Выберите товар для редактирования.",
+                                   parent=self)
             return
         item_vals = list(self.tree.item(selected[0])['values'])
         product = tuple(item_vals[1:])
         ProductEditWindow(self, self.db, self.refresh_products, product=product)
 
+    def edit_selected(self):
+        checked = self.tree.get_checked_iids()
+        if not checked:
+            messagebox.showwarning("Внимание",
+                                   "Отметьте товары галочками для редактирования.",
+                                   parent=self)
+            return
+        queue = []
+        for iid in checked:
+            if self.tree.exists(iid):
+                vals = list(self.tree.item(iid, 'values'))
+                queue.append(tuple(vals[1:]))
+        if not queue:
+            return
+        self.edit_queue = queue
+        self._open_next_edit()
+
+    def _open_next_edit(self):
+        if not self.edit_queue:
+            return
+        product = self.edit_queue.pop(0)
+        ProductEditWindow(self, self.db, self.refresh_products,
+                          product=product, on_saved=self._open_next_edit)
+
     def delete_selected(self):
         checked = self.tree.get_checked_iids()
         if not checked:
             messagebox.showwarning("Внимание",
-                                   "Отметьте товары для удаления (колонка ☐).", parent=self)
+                                   "Отметьте товары для удаления (колонка ☐).",
+                                   parent=self)
             return
-        names = [str(self.tree.item(iid, 'values')[3]) for iid in checked]
+        names = [str(self.tree.item(iid, 'values')[3]) for iid in checked
+                 if self.tree.exists(iid)]
         preview = ', '.join(names[:5])
         if len(names) > 5:
             preview += '...'
-        msg = "Удалить {0} товаров?\n{1}".format(len(checked), preview)
+        msg = "Удалить {0} товаров?\n{1}".format(len(names), preview)
         if not messagebox.askyesno("Подтверждение", msg, parent=self):
             return
         for iid in checked:
+            if not self.tree.exists(iid):
+                continue
             vals = self.tree.item(iid, 'values')
             product_id = vals[1]
             try:
                 self.db.delete_product(product_id)
             except Exception as e:
-                messagebox.showerror("Ошибка", "Не удалось удалить товар: {0}".format(e), parent=self)
+                messagebox.showerror("Ошибка",
+                                     "Не удалось удалить товар: {0}".format(e),
+                                     parent=self)
         self.refresh_products()
 
     def export_to_excel(self):
@@ -140,7 +182,7 @@ class WarehouseWindow(tk.Toplevel):
                    "Цена закупки", "Цена продажи", "Количество"]
         filepath = ExcelExporter.export_data(headers, rows, sheet_title="Склад")
         ExcelExporter.open_file(filepath)
-        messagebox.showinfo("Экспорт", f"Файл сохранён: {filepath}", parent=self)
+        messagebox.showinfo("Экспорт", "Файл сохранён:\n" + filepath, parent=self)
 
     def on_filter_change(self):
         if self.available_var.get():
@@ -156,6 +198,7 @@ class WarehouseWindow(tk.Toplevel):
         self.search_panel.clear()
 
     def on_close(self):
+        self.edit_queue.clear()
         if hasattr(self.master, "child_windows") and self in self.master.child_windows:
             self.master.child_windows.remove(self)
         self.destroy()
