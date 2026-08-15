@@ -154,8 +154,7 @@ class ProductEditWindow(tk.Toplevel):
         self._clear_fields()
         # Возвращаем фокус этому окну (а не главному)
         self._focus_first_field()
-        messagebox.showinfo("Готово", "Товар добавлен. Можно вводить следующий.",
-                            parent=self)
+        messagebox.showinfo("Готово", "Товар добавлен. Можно вводить следующий.", parent=self)
         self._focus_first_field()
 
     def on_close(self):

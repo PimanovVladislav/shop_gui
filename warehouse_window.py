@@ -100,7 +100,7 @@ class WarehouseWindow(tk.Toplevel):
     def edit_product(self):
         selected = self.tree.selection()
         if not selected:
-            messagebox.showwarning("Внимание", "Выберите товар для редактирования.")
+            messagebox.showwarning("Внимание", "Выберите товар для редактирования.", parent=self)
             return
         item_vals = list(self.tree.item(selected[0])['values'])
         product = tuple(item_vals[1:])
@@ -110,14 +110,14 @@ class WarehouseWindow(tk.Toplevel):
         checked = self.tree.get_checked_iids()
         if not checked:
             messagebox.showwarning("Внимание",
-                                   "Отметьте товары для удаления (колонка ☐).")
+                                   "Отметьте товары для удаления (колонка ☐).", parent=self)
             return
         names = [str(self.tree.item(iid, 'values')[3]) for iid in checked]
         preview = ', '.join(names[:5])
         if len(names) > 5:
             preview += '...'
         msg = "Удалить {0} товаров?\n{1}".format(len(checked), preview)
-        if not messagebox.askyesno("Подтверждение", msg):
+        if not messagebox.askyesno("Подтверждение", msg, parent=self):
             return
         for iid in checked:
             vals = self.tree.item(iid, 'values')
@@ -125,7 +125,7 @@ class WarehouseWindow(tk.Toplevel):
             try:
                 self.db.delete_product(product_id)
             except Exception as e:
-                messagebox.showerror("Ошибка", "Не удалось удалить товар: {0}".format(e))
+                messagebox.showerror("Ошибка", "Не удалось удалить товар: {0}".format(e), parent=self)
         self.refresh_products()
 
     def export_to_excel(self):
@@ -134,13 +134,13 @@ class WarehouseWindow(tk.Toplevel):
             tuple(list(self.tree.item(iid, 'values'))[1:])
             for iid in self.tree.get_children('')]
         if not rows:
-            messagebox.showwarning("Внимание", "Нет данных для экспорта.")
+            messagebox.showwarning("Внимание", "Нет данных для экспорта.", parent=self)
             return
         headers = ["ID", "Код товара", "Наименование",
                    "Цена закупки", "Цена продажи", "Количество"]
         filepath = ExcelExporter.export_data(headers, rows, sheet_title="Склад")
         ExcelExporter.open_file(filepath)
-        messagebox.showinfo("Экспорт", f"Файл сохранён: {filepath}")
+        messagebox.showinfo("Экспорт", f"Файл сохранён: {filepath}", parent=self)
 
     def on_filter_change(self):
         if self.available_var.get():
