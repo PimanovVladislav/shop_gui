@@ -86,7 +86,7 @@ class WarehouseWindow(tk.Toplevel):
     def update_tree(self, products):
         self.tree.delete(*self.tree.get_children())
         for p in products:
-            self.tree.insert('', 'end', values=p)
+            self.tree.insert('', 'end', iid=str(p[0]), values=p)
 
     def on_search(self, query):
         query = query.lower()

@@ -31,7 +31,7 @@ class CashRegisterWindow(tk.Toplevel):
             checkbox_column=True,
             double_click_check=False
         )
-        self.products_tree.heading('check', text='\u2610')
+        self.products_tree.heading('check', text='☐')
         self.products_tree.heading('code', text='Код')
         self.products_tree.heading('name', text='Наименование')
         self.products_tree.heading('price', text='Цена продажи')
@@ -55,8 +55,9 @@ class CashRegisterWindow(tk.Toplevel):
                                       textvariable=self.qty_var, width=6)
         self.qty_spinbox.pack(side=tk.LEFT, padx=(0, 10))
         bind_entry_shortcuts(self.qty_spinbox)
+        # takefocus=0, чтобы кнопка не уводила фокус с таблицы товаров
         tk.Button(qty_frame, text="Добавить в корзину (Enter)",
-                  command=self.add_to_cart).pack(side=tk.LEFT)
+                  takefocus=0, command=self.add_to_cart).pack(side=tk.LEFT)
 
         # ── Правая часть: корзина ──────────────────────────
         right_frame = tk.Frame(self)
@@ -71,7 +72,7 @@ class CashRegisterWindow(tk.Toplevel):
             checkbox_column=True,
             double_click_check=False
         )
-        self.cart_tree.heading('check', text='\u2610')
+        self.cart_tree.heading('check', text='☐')
         self.cart_tree.heading('name', text='Наименование')
         self.cart_tree.heading('price', text='Цена')
         self.cart_tree.heading('amount', text='Кол-во')
@@ -90,7 +91,7 @@ class CashRegisterWindow(tk.Toplevel):
         # Кнопки корзины: takefocus=0, чтобы не забирали фокус с таблицы
         btn_cart = tk.Frame(right_frame)
         btn_cart.pack(fill=tk.X, pady=5)
-        tk.Button(btn_cart, text="\u2212", width=3, takefocus=0,
+        tk.Button(btn_cart, text="−", width=3, takefocus=0,
                   command=self.decrease_cart_qty).pack(side=tk.LEFT, padx=2)
         tk.Button(btn_cart, text="+", width=3, takefocus=0,
                   command=self.increase_cart_qty).pack(side=tk.LEFT, padx=2)
@@ -114,6 +115,7 @@ class CashRegisterWindow(tk.Toplevel):
         self.search_panel.clear()
 
     def update_tree(self, products):
+        # галочки НЕ сбрасываем — выбор переживает фильтрацию/отмену поиска
         self.products_tree.delete(*self.products_tree.get_children())
         for p in products:
             self.products_tree.insert('', 'end', iid=str(p[0]),
@@ -143,16 +145,8 @@ class CashRegisterWindow(tk.Toplevel):
                                for f in (p[1], p[2], p[4], p[5]))]
         self.update_tree(filtered)
 
-    def _restore_products_focus(self):
-        """Возвращает фокус на таблицу списка товаров."""
-        try:
-            self.products_tree.tree.focus_set()
-        except Exception:
-            pass
-
     def _on_products_enter(self, event):
         self.add_to_cart()
-        self._restore_products_focus()
         return 'break'
 
     def _on_cart_backspace(self, event):
@@ -244,8 +238,8 @@ class CashRegisterWindow(tk.Toplevel):
         else:
             self.cart.append((product_id, product[1], product[4], qty))
         self.refresh_cart()
-        # фокус возвращаем на таблицу товаров (а не на корзину)
-        self._restore_products_focus()
+        # фокус остаётся на таблице ТОВАРОВ (не уводим на корзину)
+        self._restore_products_focus(product_id)
 
     def refresh_cart(self):
         self.cart_tree.delete(*self.cart_tree.get_children())
@@ -256,6 +250,17 @@ class CashRegisterWindow(tk.Toplevel):
             self.cart_tree.insert('', 'end', iid=str(item[0]),
                 values=(item[1], f"{item[2]:.2f}", item[3], f"{sum_:.2f}"))
         self.total_var.set(f"Итого: {total:.2f}")
+
+    def _restore_products_focus(self, product_id):
+        """Возвращает фокус на таблицу товаров и выделяет товар."""
+        iid = str(product_id)
+        if self.products_tree.exists(iid):
+            self.products_tree.set_active(iid)
+            self.products_tree.selection_set([iid])
+        try:
+            self.products_tree.tree.focus_set()
+        except Exception:
+            pass
 
     def _restore_cart_focus(self, product_id):
         """Возвращает фокус на таблицу корзины и выделяет строку товара."""

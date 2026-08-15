@@ -126,7 +126,7 @@ class AnalysisWindow(tk.Toplevel):
     def _display_rows(self, rows):
         self.tree.delete(*self.tree.get_children())
         for row in rows:
-            self.tree.insert('', 'end', values=row)
+            self.tree.insert('', 'end', iid=str(row[0]), values=row)
 
     def filter_rows(self, query):
         query = query.strip().lower()
