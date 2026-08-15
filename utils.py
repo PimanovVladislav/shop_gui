@@ -2,27 +2,35 @@ import time
 import tkinter as tk
 from tkinter import ttk
 
-# Физическая клавиша (keycode) не зависит от раскладки.
+# Физическая клавиша (keycode) не зависит от раскладки — используется как запасной вариант.
 _SHORTCUT_KEYCODE = {
     67: 'copy', 86: 'paste', 88: 'cut', 90: 'undo', 89: 'redo',
     65: 'select_all', 83: 'save', 80: 'print',
 }
 
+# keysym зависит от раскладки, поэтому перечисляем И английские, И русские значения.
 _SHORTCUT_KEYSYM = {
+    # английская раскладка
     'c': 'copy', 'v': 'paste', 'x': 'cut', 'z': 'undo', 'y': 'redo',
     'a': 'select_all', 's': 'save', 'p': 'print',
+    # русская раскладка
     'cyrillic_es': 'copy', 'cyrillic_em': 'paste', 'cyrillic_che': 'cut',
-    'cyrillic_ya': 'undo', 'cyrillic_ef': 'select_all',
+    'cyrillic_ya': 'undo', 'cyrillic_en': 'redo', 'cyrillic_ef': 'select_all',
     'cyrillic_yeru': 'save', 'cyrillic_ze': 'print',
 }
 
 
 def detect_shortcut(event):
-    action = _SHORTCUT_KEYCODE.get(event.keycode)
+    """Определяет действие по событию клавиши.
+
+    Сначала по keysym (зависит от раскладки, но мы перечислили оба варианта),
+    затем по keycode (физическая клавиша) как запасной вариант.
+    """
+    ks = (event.keysym or '').lower()
+    action = _SHORTCUT_KEYSYM.get(ks)
     if action:
         return action
-    ks = (event.keysym or '').lower()
-    return _SHORTCUT_KEYSYM.get(ks)
+    return _SHORTCUT_KEYCODE.get(event.keycode)
 
 
 def bind_entry_shortcuts(widget):
@@ -158,15 +166,8 @@ class SortableTreeview(ttk.Frame):
         self.tree.bind('<Button-5>', self._on_wheel, add='+')
         self.tree.bind('<Escape>', self._on_escape)
 
+        # Единственный обработчик Ctrl-сочетаний (работает в любой раскладке)
         self.tree.bind('<Control-KeyPress>', self._on_ctrl_key)
-        self.tree.bind('<Control-x>', self._dummy)
-        self.tree.bind('<Control-c>', self._dummy)
-        self.tree.bind('<Control-v>', self._dummy)
-        self.tree.bind('<Control-z>', self._dummy)
-        self.tree.bind('<Control-a>', self._dummy)
-
-    def _dummy(self, event=None):
-        return 'break'
 
     # ── Прокси ─────────────────────────────────────────────
     def heading(self, column, **kwargs):
