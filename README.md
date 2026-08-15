@@ -7,6 +7,8 @@ venv\Scripts\activate
 pip install -r requirements.txt
 4. Запустить
 py main_window.py
+5. pip install pyinstaller
+6. pyinstaller --onefile --noconsole --name="Магазин" --icon="main_icon.ico" main_window.py
 P.S. 
 - Отключить окружение 
 deactivate
@@ -14,6 +16,7 @@ deactivate
 rmdir /s venv
 - авто requirements
 pip freeze > requirements.txt
+
 
 Задачи для реализации:
 1. Убрать поле с галочками из таблицы товаров в окне кассы, в корзине на кнопку удалить нужно удалять выбранные товары, либо тот, на котором стоит фокус.
