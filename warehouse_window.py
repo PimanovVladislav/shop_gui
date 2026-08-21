@@ -151,21 +151,26 @@ class WarehouseWindow(tk.Toplevel):
 
     def edit_selected(self):
         checked = self.tree.get_checked_iids()
-        if not checked:
-            messagebox.showwarning("Внимание",
-                                   "Отметьте товары галочками для редактирования.",
-                                   parent=self)
-            return
+        if checked:
+            iids = [iid for iid in checked if self.tree.exists(iid)]
+        else:
+            focused = self.tree.get_focused_row_iid()
+            if not focused:
+                messagebox.showwarning(
+                    "Внимание",
+                    "Отметьте товары галочками или выберите строку для редактирования.",
+                    parent=self)
+                return
+            iids = [focused]
         queue = []
-        for iid in checked:
-            if self.tree.exists(iid):
-                product_id = int(iid)
-                product = self.db.get_product_by_id(product_id)
-                if product:
-                    queue.append((
-                        product[0], product[2], product[1],
-                        product[3], product[4], product[5]
-                    ))
+        for iid in iids:
+            product_id = int(iid)
+            product = self.db.get_product_by_id(product_id)
+            if product:
+                queue.append((
+                    product[0], product[2], product[1],
+                    product[3], product[4], product[5]
+                ))
         if not queue:
             return
         self.edit_queue = queue
