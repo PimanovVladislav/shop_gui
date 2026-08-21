@@ -10,6 +10,7 @@ class CashRegisterWindow(tk.Toplevel):
         self.db = db
         self.title("Касса")
         self.geometry("1100x550")
+        self.state('zoomed')
         self.wm_iconbitmap("main_icon.ico")
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 

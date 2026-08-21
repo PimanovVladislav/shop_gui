@@ -11,6 +11,7 @@ class AnalysisWindow(tk.Toplevel):
         super().__init__(master)
         self.title("Анализ продаж")
         self.geometry("1100x650")
+        self.state('zoomed')
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.db = db
 
