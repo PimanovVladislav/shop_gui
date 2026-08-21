@@ -5,7 +5,7 @@ import tempfile
 import tkinter as tk
 from datetime import datetime
 from tkinter import messagebox
-from utils import center_window, format_datetime, parse_datetime, DATE_FMT, today_str
+from utils import center_window, format_datetime, parse_datetime, DATE_FMT, today_str, bind_ctrl_shortcuts
 
 try:
     from fpdf import FPDF
@@ -58,8 +58,10 @@ class ReceiptWindow(tk.Toplevel):
         # Горячие клавиши (bind_all, т.к. фокус может быть на Text/кнопках)
         self.bind_all('<space>', self._on_close_key)
         self.bind_all('<Return>', self._on_close_key)
-        self.bind_all('<Control-s>', self._on_save_key)
-        self.bind_all('<Control-p>', self._on_print_key)
+        bind_ctrl_shortcuts(self, {
+            'save': self._on_save_key,
+            'print': self._on_print_key,
+        }, use_bind_all=True)
 
         self.after(50, self._focus)
         center_window(self)
@@ -190,7 +192,7 @@ class ReceiptWindow(tk.Toplevel):
                                  parent=self)
 
     def on_close(self):
-        for seq in ('<space>', '<Return>', '<Control-s>', '<Control-p>'):
+        for seq in ('<space>', '<Return>', '<Control-KeyPress>'):
             try:
                 self.unbind_all(seq)
             except Exception:

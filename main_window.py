@@ -14,7 +14,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Учет и торговля рыболовными товарами")
-        self.geometry("300x150")
+        self.geometry("300x200")
         self.wm_iconbitmap("main_icon.ico")
 
         self.db = Database()

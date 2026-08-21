@@ -65,7 +65,6 @@ class CashRegisterWindow(tk.Toplevel):
             columns=('check', 'name', 'price', 'amount', 'sum'),
             show='headings',
             checkbox_column=True,
-            double_click_check=False
         )
         self.cart_tree.heading('check', text='☐')
         self.cart_tree.heading('name', text='Наименование')
@@ -249,6 +248,7 @@ class CashRegisterWindow(tk.Toplevel):
                     vals[0] = '\u2611'
                     self.cart_tree._checked_items.add(iid)
                     self.cart_tree.item(iid, values=vals)
+                    self.cart_tree._update_row_tags(iid)
         self.cart_tree.move_checked_to_top()
         self.total_var.set(f"Итого: {total:.2f}")
 
@@ -345,13 +345,13 @@ class CashRegisterWindow(tk.Toplevel):
         self.cart_tree.hide_cell_highlight()
         region = self.cart_tree.identify("region", event.x, event.y)
         if region != "cell":
-            return
+            return False
         row_id = self.cart_tree.identify_row(event.y)
         column = self.cart_tree.identify_column(event.x)
         if column != '#4':
-            return
+            return False
         if not row_id:
-            return
+            return False
 
         x, y, width, height = self.cart_tree.bbox(row_id, column)
         value = self.cart_tree.set(row_id, 'amount')
@@ -399,6 +399,7 @@ class CashRegisterWindow(tk.Toplevel):
         self.editing_entry.bind('<Return>', save_edit)
         self.editing_entry.bind('<FocusOut>',
             lambda e: self.editing_entry and self.editing_entry.destroy())
+        return True
 
     def checkout(self):
         if not self.cart:
