@@ -32,13 +32,15 @@ class WheelSpinbox(tk.Spinbox):
 
 
 class WriteOffWindow(tk.Toplevel):
-    def __init__(self, master, db, product_id, refresh_callback):
+    def __init__(self, master, db, product_id, refresh_callback, store=None):
         super().__init__(master)
         self.db = db
+        self.store = store or getattr(master, 'product_store', None)
         self.product_id = product_id
         self.refresh_callback = refresh_callback
 
-        product = db.get_product_by_id(product_id)
+        product = (self.store.get_db_row(product_id) if self.store
+                   else db.get_product_by_id(product_id))
         if not product:
             messagebox.showerror("Ошибка", "Товар не найден.", parent=master)
             self.destroy()
@@ -110,6 +112,8 @@ class WriteOffWindow(tk.Toplevel):
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось списать товар: {e}", parent=self)
             return
+        if self.store:
+            self.store.apply_amount_delta(self.product_id, -amount)
         messagebox.showinfo("Успех", f"Товар списан. Чек №{check_id}.", parent=self)
         self.refresh_callback(self.product_id)
         self.destroy()

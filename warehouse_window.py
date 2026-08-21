@@ -12,6 +12,7 @@ class WarehouseWindow(tk.Toplevel):
     def __init__(self, master, db: Database):
         super().__init__(master)
         self.db = db
+        self.store = master.product_store
         self.title("Склад")
         self.geometry("1000x500")
         self.state('zoomed')
@@ -85,17 +86,65 @@ class WarehouseWindow(tk.Toplevel):
         center_window(self)
         self.refresh_products()
 
+    def _format_product_values(self, p):
+        display = list(p)
+        if len(display) > 6:
+            if display[6] is None or display[6] == '':
+                display[6] = '—'
+            else:
+                display[6] = format_date(display[6])
+        return tuple(display)
+
     def refresh_products(self, focus_product_id=None):
         if focus_product_id is not None:
             self._focus_product_id = focus_product_id
-        self.all_products = self.db.get_all_products()
-        self._apply_filter_and_display(clear_search=True)
+            if self._update_single_product(focus_product_id):
+                return
+        self.store.reload()
+        self.all_products = self.store.get_all()
+        self._apply_filter_and_display(clear_search=focus_product_id is not None)
+
+    def _update_single_product(self, product_id):
+        p = self.store.get(product_id)
+        iid = str(product_id)
+        if p is None:
+            if self.tree.exists(iid):
+                self.tree.delete(iid)
+            self.all_products = self.store.get_all()
+            return True
+        if not self._product_matches_filter(p):
+            self.all_products = self.store.get_all()
+            self._apply_filter_and_display()
+            return True
+        values = self._format_product_values(p)
+        if self.tree.exists(iid):
+            self.tree.item(iid, values=values)
+            for i, row in enumerate(self.all_products):
+                if row[0] == product_id:
+                    self.all_products[i] = p
+                    break
+            if self._focus_product_id is not None:
+                self.tree.set_active(iid)
+                self.tree.see(iid)
+                self.tree.tree.focus_set()
+                self._focus_product_id = None
+            return True
+        self.all_products = self.store.get_all()
+        self._apply_filter_and_display()
+        return True
+
+    def _product_matches_filter(self, p):
+        if self.available_var.get() and p[5] <= 0:
+            return False
+        if self.not_available_var.get() and p[5] != 0:
+            return False
+        return True
 
     def _apply_filter_and_display(self, query='', clear_search=False):
         if self.available_var.get():
-            base = self.db.get_available_products()
+            base = self.store.get_available()
         elif self.not_available_var.get():
-            base = self.db.get_not_available_products()
+            base = self.store.get_not_available()
         else:
             base = self.all_products
 
@@ -124,17 +173,12 @@ class WarehouseWindow(tk.Toplevel):
             self.search_panel.clear()
 
     def update_tree(self, products):
-        self.tree.delete(*self.tree.get_children())
-        for p in products:
-            display = list(p)
-            if len(display) > 6:
-                if display[6] is None or display[6] == '':
-                    display[6] = '—'
-                else:
-                    display[6] = format_date(display[6])
-            self.tree.insert('', 'end', iid=str(p[0]), values=display)
-        self.tree.restore_checks()
-        self.tree.move_checked_to_top()
+        rows = [(str(p[0]), self._format_product_values(p)) for p in products]
+        self.tree.load_rows(
+            rows,
+            iid_fn=lambda row: row[0],
+            values_fn=lambda row: row[1],
+        )
         if self._focus_product_id is not None:
             iid = str(self._focus_product_id)
             if self.tree.exists(iid):
@@ -148,7 +192,7 @@ class WarehouseWindow(tk.Toplevel):
         self._apply_filter_and_display(query)
 
     def add_product(self):
-        ProductEditWindow(self, self.db, self.refresh_products)
+        ProductEditWindow(self, self.db, self.refresh_products, store=self.store)
 
     def edit_selected(self):
         checked = self.tree.get_checked_iids()
@@ -166,7 +210,7 @@ class WarehouseWindow(tk.Toplevel):
         queue = []
         for iid in iids:
             product_id = int(iid)
-            product = self.db.get_product_by_id(product_id)
+            product = self.store.get_db_row(product_id)
             if product:
                 queue.append((
                     product[0], product[2], product[1],
@@ -182,7 +226,8 @@ class WarehouseWindow(tk.Toplevel):
             return
         product = self.edit_queue.pop(0)
         ProductEditWindow(self, self.db, self.refresh_products,
-                          product=product, on_saved=self._open_next_edit)
+                          product=product, on_saved=self._open_next_edit,
+                          store=self.store)
 
     def write_off_product(self):
         selected = self.tree.selection()
@@ -193,10 +238,15 @@ class WarehouseWindow(tk.Toplevel):
         elif selected:
             product_id = int(selected[0])
         if product_id is None:
+            focused = self.tree.get_focused_row_iid()
+            if focused:
+                product_id = int(focused)
+        if product_id is None:
             messagebox.showwarning(
                 "Внимание", "Выберите один товар для списания.", parent=self)
             return
-        WriteOffWindow(self, self.db, product_id, self.refresh_products)
+        WriteOffWindow(self, self.db, product_id, self.refresh_products,
+                       store=self.store)
 
     def delete_selected(self):
         checked = self.tree.get_checked_iids()
@@ -218,7 +268,7 @@ class WarehouseWindow(tk.Toplevel):
             if not self.tree.exists(iid):
                 continue
             try:
-                self.db.delete_product(int(iid))
+                self.store.delete(int(iid))
             except Exception as e:
                 messagebox.showerror("Ошибка",
                                      f"Не удалось удалить товар: {e}", parent=self)

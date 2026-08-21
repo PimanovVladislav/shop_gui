@@ -32,9 +32,11 @@ class SelectAllEntry(tk.Entry):
 
 
 class ProductEditWindow(tk.Toplevel):
-    def __init__(self, master, db, refresh_callback, product=None, on_saved=None):
+    def __init__(self, master, db, refresh_callback, product=None, on_saved=None,
+                 store=None):
         super().__init__(master)
         self.db = db
+        self.store = store or getattr(master, 'product_store', None)
         self.refresh_callback = refresh_callback
         self.product = product
         self.on_saved = on_saved
@@ -45,7 +47,7 @@ class ProductEditWindow(tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
         if product:
-            full = db.get_product_by_id(product[0])
+            full = self.store.get_db_row(product[0]) if self.store else db.get_product_by_id(product[0])
             if full:
                 purchase_date = full[7] if len(full) > 7 and full[7] else None
             else:
@@ -161,17 +163,27 @@ class ProductEditWindow(tk.Toplevel):
         product_id = None
         if self.product:
             product_id = self.product[0]
-            c = self.db.conn.cursor()
-            c.execute(
-                "UPDATE products SET name=?, code=?, buy_price=?, sale_price=?, "
-                "amount=?, purchase_date=? WHERE id=?",
-                (name, code, buy_price, sale_price, amount, purchase_date, product_id)
-            )
-            self.db.conn.commit()
+            if self.store:
+                self.store.update(
+                    product_id, name, code, buy_price, sale_price, amount, purchase_date
+                )
+            else:
+                c = self.db.conn.cursor()
+                c.execute(
+                    "UPDATE products SET name=?, code=?, buy_price=?, sale_price=?, "
+                    "amount=?, purchase_date=? WHERE id=?",
+                    (name, code, buy_price, sale_price, amount, purchase_date, product_id)
+                )
+                self.db.conn.commit()
         else:
-            product_id = self.db.add_product(
-                name, code, buy_price, sale_price, amount, purchase_date
-            )
+            if self.store:
+                product_id = self.store.add(
+                    name, code, buy_price, sale_price, amount, purchase_date
+                )
+            else:
+                product_id = self.db.add_product(
+                    name, code, buy_price, sale_price, amount, purchase_date
+                )
         self.refresh_callback(product_id)
         cb = self.on_saved
         self.on_saved = None
@@ -185,9 +197,14 @@ class ProductEditWindow(tk.Toplevel):
             self._focus_first_field()
             return
         name, code, buy_price, sale_price, amount, purchase_date = data
-        product_id = self.db.add_product(
-            name, code, buy_price, sale_price, amount, purchase_date
-        )
+        if self.store:
+            product_id = self.store.add(
+                name, code, buy_price, sale_price, amount, purchase_date
+            )
+        else:
+            product_id = self.db.add_product(
+                name, code, buy_price, sale_price, amount, purchase_date
+            )
         self.refresh_callback(product_id)
         self._clear_fields()
         messagebox.showinfo("Готово", "Товар добавлен. Можно вводить следующий.",

@@ -98,35 +98,37 @@ class ChecksWindow(tk.Toplevel):
         self.btn_open_receipt.pack(side=tk.LEFT, padx=5)
 
         self.current_check_id = None
+        self.all_checks = []
 
         self.products_tree.bind('<Double-1>', self.on_product_double_click)
         self.products_tree.tag_configure('selected', background='#d3d3d3')
 
-        self.on_search('')
+        self.refresh_checks()
         center_window(self)
 
     def _status_map(self):
         return {0: 'Ожидание оплаты', 1: 'Покупка', 2: 'Возврат', 3: 'Списание'}
 
     def refresh_checks(self):
-        self.checks_tree.delete(*self.checks_tree.get_children())
-        c = self.db.conn.cursor()
-        c.execute(
-            "SELECT checks.id, strftime('%d.%m.%Y %H:%M', checks.date), "
-            "checks.status, payment_type.name, "
-            "checks.sum, checks.payed_sum, checks.refused_sum "
-            "FROM checks LEFT JOIN payment_type "
-            "ON checks.payment_type = payment_type.id "
-            "ORDER BY checks.date DESC"
-        )
-        rows = c.fetchall()
-        status_map = self._status_map()
-        for r in rows:
-            self.checks_tree.insert('', 'end', values=(
-                r[0], r[1], status_map.get(r[2], 'Неизвестно'),
-                r[3], f"{r[4]:.2f}", f"{r[5]:.2f}", f"{r[6]:.2f}"
-            ))
+        self.all_checks = self.db.get_all_checks()
+        self._display_checks(self.all_checks)
         self.products_tree.delete(*self.products_tree.get_children())
+
+    def _check_row_values(self, r):
+        status_map = self._status_map()
+        return (
+            r[0], r[1], status_map.get(r[2], 'Неизвестно'),
+            r[3], f"{r[4]:.2f}", f"{r[5]:.2f}", f"{r[6]:.2f}"
+        )
+
+    def _display_checks(self, rows):
+        display = [(None, self._check_row_values(r)) for r in rows]
+        self.checks_tree.load_rows(
+            display,
+            iid_fn=lambda row: None,
+            values_fn=lambda row: row[1],
+            restore_checked=False,
+        )
 
     def on_check_selected(self, event):
         selected = self.checks_tree.selection()
@@ -140,7 +142,6 @@ class ChecksWindow(tk.Toplevel):
         self.refresh_products(self.current_check_id)
 
     def refresh_products(self, check_id):
-        self.products_tree.delete(*self.products_tree.get_children())
         c = self.db.conn.cursor()
         c.execute(
             "SELECT cp.id, p.name, p.code, cp.amount, p.sale_price "
@@ -150,11 +151,19 @@ class ChecksWindow(tk.Toplevel):
             (check_id,)
         )
         rows = c.fetchall()
+        display = []
         for r in rows:
             cp_id, name, code, amount, price = r
             total_price = price * amount
-            self.products_tree.insert('', 'end', iid=str(cp_id),
-                values=(name, code, amount, f"{price:.2f}", f"{total_price:.2f}"))
+            display.append((
+                str(cp_id),
+                (name, code, amount, f"{price:.2f}", f"{total_price:.2f}")
+            ))
+        self.products_tree.load_rows(
+            display,
+            iid_fn=lambda row: row[0],
+            values_fn=lambda row: row[1],
+        )
 
     def on_product_double_click(self, event):
         region = self.products_tree.identify("region", event.x, event.y)
@@ -221,6 +230,7 @@ class ChecksWindow(tk.Toplevel):
             (now_str, 2, payment_type))
         new_check_id = c.lastrowid
         total_refund_sum = 0
+        store_deltas = {}
         for cp_id in checked:
             vals = self.products_tree.item(cp_id, 'values')
             amount_to_return = int(vals[3])
@@ -240,11 +250,15 @@ class ChecksWindow(tk.Toplevel):
             current_amount = c.fetchone()[0]
             c.execute("UPDATE products SET amount = ? WHERE id = ?",
                       (current_amount + amount_to_return, product_id))
+            store_deltas[product_id] = store_deltas.get(product_id, 0) + amount_to_return
             price = float(vals[4])
             total_refund_sum += price * amount_to_return
         c.execute("UPDATE checks SET refused_sum = ?, sum = ? WHERE id = ?",
                   (total_refund_sum, -total_refund_sum, new_check_id))
         self.db.conn.commit()
+        store = getattr(self.master, 'product_store', None)
+        if store:
+            store.apply_amount_deltas(store_deltas)
         messagebox.showinfo("Успех",
             f"Создан чек возврата №{new_check_id} на сумму {total_refund_sum:.2f}.",
             parent=self)
@@ -269,6 +283,7 @@ class ChecksWindow(tk.Toplevel):
             (now_str, 2, payment_type))
         new_check_id = c.lastrowid
         total_refund_sum = 0
+        store_deltas = {}
         c.execute("SELECT product_id, amount FROM check_products WHERE id_check = ?",
                   (self.current_check_id,))
         rows = c.fetchall()
@@ -284,10 +299,14 @@ class ChecksWindow(tk.Toplevel):
             current_amount, price = c.fetchone()
             c.execute("UPDATE products SET amount = ? WHERE id = ?",
                       (current_amount + amount, product_id))
+            store_deltas[product_id] = store_deltas.get(product_id, 0) + amount
             total_refund_sum += price * amount
         c.execute("UPDATE checks SET refused_sum = ?, sum = ? WHERE id = ?",
                   (total_refund_sum, -total_refund_sum, new_check_id))
         self.db.conn.commit()
+        store = getattr(self.master, 'product_store', None)
+        if store:
+            store.apply_amount_deltas(store_deltas)
         messagebox.showinfo("Успех",
             f"Создан чек возврата №{new_check_id} на сумму {total_refund_sum:.2f}.",
             parent=self)
@@ -295,30 +314,21 @@ class ChecksWindow(tk.Toplevel):
 
     def on_search(self, query):
         query = query.strip().lower()
-        self.checks_tree.delete(*self.checks_tree.get_children())
+        if not query:
+            filtered = self.all_checks
+        else:
+            status_map = self._status_map()
+            filtered = []
+            for r in self.all_checks:
+                id_str = str(r[0])
+                date_str = (r[1] or '').lower()
+                status_str = status_map.get(r[2], 'Неизвестно').lower()
+                payment_str = (r[3] or '').lower()
+                if (query in id_str or query in date_str or
+                        query in status_str or query in payment_str):
+                    filtered.append(r)
+        self._display_checks(filtered)
         self.products_tree.delete(*self.products_tree.get_children())
-        c = self.db.conn.cursor()
-        c.execute(
-            "SELECT checks.id, strftime('%d.%m.%Y %H:%M', checks.date), "
-            "checks.status, payment_type.name, "
-            "checks.sum, checks.payed_sum, checks.refused_sum "
-            "FROM checks LEFT JOIN payment_type "
-            "ON checks.payment_type = payment_type.id "
-            "ORDER BY checks.date DESC"
-        )
-        rows = c.fetchall()
-        status_map = self._status_map()
-        for r in rows:
-            id_str = str(r[0])
-            date_str = r[1].lower()
-            status_str = status_map.get(r[2], 'Неизвестно').lower()
-            payment_str = (r[3] or '').lower()
-            if (query in id_str or query in date_str or
-                    query in status_str or query in payment_str):
-                self.checks_tree.insert('', 'end', values=(
-                    r[0], r[1], status_map.get(r[2], 'Неизвестно'),
-                    r[3], f"{r[4]:.2f}", f"{r[5]:.2f}", f"{r[6]:.2f}"
-                ))
 
     def on_close(self):
         if hasattr(self.master, "child_windows") and self in self.master.child_windows:

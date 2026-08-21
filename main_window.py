@@ -4,6 +4,7 @@ from analysis_window import AnalysisWindow
 from check_window import ChecksWindow
 from cash_register_window import CashRegisterWindow
 from database_operation import Database
+from product_store import ProductStore
 from warehouse_window import WarehouseWindow
 from utils import center_window
 
@@ -18,6 +19,7 @@ class App(tk.Tk):
         self.wm_iconbitmap("main_icon.ico")
 
         self.db = Database()
+        self.product_store = ProductStore(self.db)
         self.child_windows = []
 
         btn_cash = tk.Button(self, text="Касса", width=25, command=self.open_cash_register)

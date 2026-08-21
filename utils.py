@@ -229,6 +229,7 @@ class SortableTreeview(ttk.Frame):
         self._row_order = []
         self._hover_iid = None
         self._active_row_iid = None
+        self._batch_mode = False
 
         style = ttk.Style(master)
         self._style_name = 'Sortable.Treeview'
@@ -278,10 +279,43 @@ class SortableTreeview(ttk.Frame):
         self.bind('<Leave>', self._on_leave)
 
     def _flush_row_visual(self):
+        if self._batch_mode:
+            return
         try:
             self.tree.update_idletasks()
         except Exception:
             pass
+
+    def begin_batch(self):
+        self._batch_mode = True
+
+    def end_batch(self):
+        self._batch_mode = False
+        self._flush_row_visual()
+
+    def load_rows(self, rows, iid_fn=None, values_fn=None, clear=True,
+                  restore_checked=True):
+        """Пакетная загрузка строк без перерисовки после каждой вставки."""
+        if iid_fn is None:
+            iid_fn = lambda row: str(row[0])
+        if values_fn is None:
+            values_fn = lambda row: row[1] if isinstance(row, (tuple, list)) and len(row) == 2 else row
+
+        self.begin_batch()
+        try:
+            if clear:
+                children = self.tree.get_children('')
+                if children:
+                    self.delete(*children)
+            for row in rows:
+                iid = iid_fn(row)
+                values = values_fn(row)
+                self.insert('', 'end', iid=iid, values=values)
+            if restore_checked and self._checkbox_column:
+                self.restore_checks()
+                self.move_checked_to_top()
+        finally:
+            self.end_batch()
 
     def _update_row_tags(self, iid):
         if not iid or not self.tree.exists(iid):
@@ -404,6 +438,17 @@ class SortableTreeview(ttk.Frame):
             self.tree.move(iid, '', index)
 
     def restore_checks(self):
+        if self._batch_mode:
+            for iid in self._checked_items:
+                if self.tree.exists(iid):
+                    vals = list(self.tree.item(iid, 'values'))
+                    if vals and self._checkbox_column:
+                        vals[0] = '\u2611'
+                        self.tree.item(iid, values=vals)
+                    tags = ['checked_row'] if iid in self._checked_items else []
+                    if tags:
+                        self.tree.item(iid, tags=tuple(tags))
+            return
         for iid in self._checked_items:
             if self.tree.exists(iid):
                 vals = list(self.tree.item(iid, 'values'))

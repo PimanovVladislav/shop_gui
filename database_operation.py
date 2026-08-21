@@ -85,6 +85,12 @@ class Database:
         cols = [row[1] for row in c.fetchall()]
         if 'purchase_date' not in cols:
             c.execute("ALTER TABLE products ADD COLUMN purchase_date TEXT")
+        c.execute('CREATE INDEX IF NOT EXISTS idx_products_deleted ON products(deleted)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_checks_date ON checks(date)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_cp_check ON check_products(id_check)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_cp_product ON check_products(product_id)')
+        c.execute('PRAGMA journal_mode=WAL')
+        c.execute('PRAGMA synchronous=NORMAL')
         self.conn.commit()
 
     def get_all_products(self):
@@ -173,15 +179,30 @@ class Database:
 
         payment_types = self.get_payment_types()
         payment_type = payment_types[0][0] if payment_types else 1
-
         date_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         sum_ = product[4] * amount
-        check_id = self.create_check(
-            date_str, CHECK_STATUS_WRITEOFF, payment_type, sum_, 0, 0
-        )
-        self.add_product_to_check(product_id, amount, check_id)
-        self.update_product_amount(product_id, product[5] - amount)
-        return check_id
+
+        c = self.conn.cursor()
+        try:
+            c.execute(
+                'INSERT INTO checks (date, status, payment_type, sum, payed_sum, refused_sum) '
+                'VALUES (?, ?, ?, ?, 0, 0)',
+                (date_str, CHECK_STATUS_WRITEOFF, payment_type, sum_)
+            )
+            check_id = c.lastrowid
+            c.execute(
+                'INSERT INTO check_products (product_id, amount, id_check) VALUES (?, ?, ?)',
+                (product_id, amount, check_id)
+            )
+            c.execute(
+                'UPDATE products SET amount = ? WHERE id = ?',
+                (product[5] - amount, product_id)
+            )
+            self.conn.commit()
+            return check_id
+        except Exception:
+            self.conn.rollback()
+            raise
 
     def get_sales_analysis(self, date_from: datetime, date_to: datetime):
         """
@@ -198,10 +219,7 @@ class Database:
             SELECT
                 p.code,
                 p.name,
-                (SELECT MAX(ch2.date)
-                 FROM check_products cp2
-                 JOIN checks ch2 ON cp2.id_check = ch2.id
-                 WHERE cp2.product_id = p.id AND ch2.status = 1) AS last_sale_date,
+                MAX(CASE WHEN ch.status = 1 THEN ch.date END) AS last_sale_date,
                 IFNULL(SUM(CASE WHEN ch.status = 1 THEN cp.amount ELSE 0 END), 0) AS sold_qty,
                 IFNULL(SUM(CASE WHEN ch.status = 2 THEN cp.amount ELSE 0 END), 0) AS returned_qty,
                 IFNULL(SUM(CASE WHEN ch.status = 1 THEN cp.amount ELSE 0 END), 0)
@@ -214,10 +232,66 @@ class Database:
             FROM products p
             JOIN check_products cp ON p.id = cp.product_id
             JOIN checks ch ON cp.id_check = ch.id AND ch.date BETWEEN ? AND ?
-            GROUP BY p.id, p.name, p.amount
+            WHERE p.deleted = 0
+            GROUP BY p.id, p.code, p.name, p.amount
             ORDER BY p.name
         """
         c.execute(query, (date_from_str, date_to_str))
+        return c.fetchall()
+
+    def process_sale(self, date_str, status, payment_type, total_sum, payed,
+                     refused, items, receipt_text=None):
+        """Оформление продажи в одной транзакции.
+
+        items: [(product_id, amount), ...]
+        Возвращает id созданного чека.
+        """
+        c = self.conn.cursor()
+        try:
+            c.execute(
+                'INSERT INTO checks (date, status, payment_type, sum, payed_sum, refused_sum) '
+                'VALUES (?, ?, ?, ?, ?, ?)',
+                (date_str, status, payment_type, total_sum, payed, refused)
+            )
+            check_id = c.lastrowid
+            for product_id, amount in items:
+                c.execute(
+                    'INSERT INTO check_products (product_id, amount, id_check) '
+                    'VALUES (?, ?, ?)',
+                    (product_id, amount, check_id)
+                )
+                c.execute('SELECT amount FROM products WHERE id = ?', (product_id,))
+                row = c.fetchone()
+                if row is None:
+                    raise ValueError(f"Товар {product_id} не найден")
+                new_amount = row[0] - amount
+                if new_amount < 0:
+                    raise ValueError(f"Недостаточно товара {product_id} на складе")
+                c.execute(
+                    'UPDATE products SET amount = ? WHERE id = ?',
+                    (new_amount, product_id)
+                )
+            if receipt_text is not None:
+                c.execute(
+                    'UPDATE checks SET receipt_text = ? WHERE id = ?',
+                    (receipt_text, check_id)
+                )
+            self.conn.commit()
+            return check_id
+        except Exception:
+            self.conn.rollback()
+            raise
+
+    def get_all_checks(self):
+        c = self.conn.cursor()
+        c.execute(
+            "SELECT checks.id, strftime('%d.%m.%Y %H:%M', checks.date), "
+            "checks.status, payment_type.name, "
+            "checks.sum, checks.payed_sum, checks.refused_sum "
+            "FROM checks LEFT JOIN payment_type "
+            "ON checks.payment_type = payment_type.id "
+            "ORDER BY checks.date DESC"
+        )
         return c.fetchall()
 
     def close(self):
