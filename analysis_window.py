@@ -94,8 +94,6 @@ class AnalysisWindow(tk.Toplevel):
         self.refresh_data()
 
     def refresh_data(self):
-        self.tree.delete(*self.tree.get_children())
-
         date_from = self.date_from.get_date()
         date_to = self.date_to.get_date()
 
@@ -130,12 +128,12 @@ class AnalysisWindow(tk.Toplevel):
         self.update_summaries(self.all_rows)
 
     def _display_rows(self, rows):
-        self.tree.delete(*self.tree.get_children())
-        for row in rows:
-            iid = str(row[1])
-            self.tree.insert('', 'end', iid=iid, values=row)
-        self.tree.restore_checks()
-        self.tree.move_checked_to_top()
+        display = [(str(row[1]), row) for row in rows]
+        self.tree.load_rows(
+            display,
+            iid_fn=lambda item: item[0],
+            values_fn=lambda item: item[1],
+        )
 
     def filter_rows(self, query):
         query = query.strip().lower()

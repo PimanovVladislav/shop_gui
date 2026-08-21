@@ -6,9 +6,11 @@ from receipt_window import ReceiptWindow
 
 
 class PaymentWindow(tk.Toplevel):
-    def __init__(self, master, db, cart, refresh_products_callback, clear_cart_callback):
+    def __init__(self, master, db, cart, refresh_products_callback, clear_cart_callback,
+                 store=None):
         super().__init__(master)
         self.db = db
+        self.store = store or getattr(master, 'product_store', None)
         self.cart = cart
         self.refresh_products_callback = refresh_products_callback
         self.clear_cart_callback = clear_cart_callback
@@ -118,31 +120,32 @@ class PaymentWindow(tk.Toplevel):
             self._focus_amount()
             return
         refused = payed - self.total_sum
-
         date_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        check_id = self.db.create_check(date_str, 1, self.payment_var.get(),
-                                        self.total_sum, payed, refused)
-
-        for item in self.cart:
-            product_id, name, price, amount = item
-            self.db.add_product_to_check(product_id, amount, check_id)
-            product = self.db.get_product_by_id(product_id)
-            new_amount = product[5] - amount
-            self.db.update_product_amount(product_id, new_amount)
-
+        items = [(item[0], item[3]) for item in self.cart]
         receipt_text = self._build_receipt_text(
             date_str, self.payment_var.get(), self.total_sum, payed, refused)
+
         try:
-            self.db.save_receipt_text(check_id, receipt_text)
-        except Exception:
-            pass
+            check_id = self.db.process_sale(
+                date_str, 1, self.payment_var.get(),
+                self.total_sum, payed, refused, items, receipt_text
+            )
+        except ValueError as e:
+            messagebox.showwarning("Внимание", str(e), parent=self)
+            return
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось провести оплату: {e}", parent=self)
+            return
+
+        if self.store:
+            self.store.apply_amount_deltas({pid: -amt for pid, amt in items})
 
         self._last_check_id = check_id
         self._last_date_str = date_str
 
         messagebox.showinfo("Успех", "Оплата прошла успешно. Сдача: {0:.2f}".format(refused),
                             parent=self)
-        self.refresh_products_callback()
+        self.refresh_products_callback([item[0] for item in self.cart])
         self.clear_cart_callback()
         self._lock_after_payment()
 
