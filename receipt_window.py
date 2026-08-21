@@ -5,6 +5,7 @@ import tempfile
 import tkinter as tk
 from datetime import datetime
 from tkinter import messagebox
+from utils import center_window, format_datetime, parse_datetime, DATE_FMT, today_str
 
 try:
     from fpdf import FPDF
@@ -27,6 +28,7 @@ class ReceiptWindow(tk.Toplevel):
         self.check_id = check_id
         self.date_str = date_str or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.receipt_text = receipt_text or ""
+        self._display_datetime = format_datetime(self.date_str)
 
         self.title("Чек №{0}".format(check_id))
         self.geometry("500x620")
@@ -60,6 +62,7 @@ class ReceiptWindow(tk.Toplevel):
         self.bind_all('<Control-p>', self._on_print_key)
 
         self.after(50, self._focus)
+        center_window(self)
 
     def _focus(self):
         try:
@@ -98,15 +101,13 @@ class ReceiptWindow(tk.Toplevel):
             desktop = os.path.expanduser("~")
         receipts_dir = os.path.join(desktop, "Чеки")
 
-        date_folder = self.date_str[:10] if len(self.date_str) >= 10 else "unknown"
+        date_folder = parse_datetime(self.date_str)
+        date_folder = date_folder.strftime(DATE_FMT) if date_folder else today_str()
         target_dir = os.path.join(receipts_dir, date_folder)
         os.makedirs(target_dir, exist_ok=True)
 
-        time_part = ""
-        if len(self.date_str) >= 19:
-            time_part = self.date_str[11:19].replace(':', '-')
-        else:
-            time_part = datetime.now().strftime("%H-%M-%S")
+        dt = parse_datetime(self.date_str) or datetime.now()
+        time_part = dt.strftime("%H-%M-%S")
 
         filename = "Чек {0}_{1}.pdf".format(self.check_id, time_part)
         return os.path.join(target_dir, filename)

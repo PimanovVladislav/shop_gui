@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox
 from datetime import datetime
-from utils import bind_entry_shortcuts
+from utils import bind_entry_shortcuts, center_window, format_datetime
 from receipt_window import ReceiptWindow
 
 
@@ -18,6 +18,9 @@ class PaymentWindow(tk.Toplevel):
         self.wm_iconbitmap("main_icon.ico")
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
+        self._paid = False
+        self._radio_buttons = []
+
         self.total_sum = sum(item[2]*item[3] for item in cart)
         tk.Label(self, text="Сумма к оплате: {0:.2f}".format(self.total_sum),
                  font=("Arial", 14)).pack(pady=10)
@@ -27,8 +30,10 @@ class PaymentWindow(tk.Toplevel):
         self.payment_var = tk.IntVar()
         self.payment_var.set(self.payment_types[0][0])
         for pt in self.payment_types:
-            tk.Radiobutton(self, text=pt[1], variable=self.payment_var,
-                           value=pt[0]).pack(anchor='w')
+            rb = tk.Radiobutton(self, text=pt[1], variable=self.payment_var,
+                                value=pt[0])
+            rb.pack(anchor='w')
+            self._radio_buttons.append(rb)
 
         tk.Label(self, text="Внесенная сумма:").pack()
         self.payed_var = tk.DoubleVar(value=self.total_sum)
@@ -36,12 +41,11 @@ class PaymentWindow(tk.Toplevel):
         self.payed_entry.pack()
         bind_entry_shortcuts(self.payed_entry)
 
-        btn_pay = tk.Button(self, text="Оплатить", command=self.pay)
-        btn_pay.pack(pady=20)
+        self.btn_pay = tk.Button(self, text="Оплатить", command=self.pay)
+        self.btn_pay.pack(pady=20)
 
-        # Кнопка просмотра чека (становится активной после успешной оплаты)
         self.btn_view_receipt = tk.Button(
-            self, text="Просмотр чека",
+            self, text="Просмотр чеков",
             command=self.view_receipt, state='disabled')
         self.btn_view_receipt.pack(pady=(0, 10))
 
@@ -49,8 +53,11 @@ class PaymentWindow(tk.Toplevel):
         self._last_date_str = None
 
         self.after(50, self._focus_amount)
+        center_window(self)
 
     def _focus_amount(self):
+        if self._paid:
+            return
         try:
             self.payed_entry.focus_force()
             self.payed_entry.focus_set()
@@ -62,14 +69,23 @@ class PaymentWindow(tk.Toplevel):
         except Exception:
             pass
 
+    def _lock_after_payment(self):
+        """Блокирует повторную оплату; доступны только закрытие и просмотр чека."""
+        self._paid = True
+        self.btn_pay.config(state='disabled')
+        self.payed_entry.config(state='disabled')
+        for rb in self._radio_buttons:
+            rb.config(state='disabled')
+        self.btn_view_receipt.config(state='normal')
+        self.btn_view_receipt.focus_set()
+
     def _build_receipt_text(self, date_str, payment_type_id, total_sum, payed, refused):
-        """Формирует текстовое представление чека."""
         lines = []
         lines.append("=" * 42)
         lines.append("МАГАЗИН РЫБОЛОВНЫХ ТОВАРОВ".center(42))
         lines.append("КАССОВЫЙ ЧЕК".center(42))
         lines.append("=" * 42)
-        lines.append("Дата: {0}".format(date_str))
+        lines.append("Дата: {0}".format(format_datetime(date_str)))
         lines.append("Тип оплаты: {0}".format(
             self._payment_type_name(payment_type_id)))
         lines.append("-" * 42)
@@ -93,6 +109,8 @@ class PaymentWindow(tk.Toplevel):
         return str(payment_type_id)
 
     def pay(self):
+        if self._paid:
+            return
         payed = self.payed_var.get()
         if payed < self.total_sum:
             messagebox.showwarning("Внимание", "Внесенная сумма меньше суммы к оплате.",
@@ -112,7 +130,6 @@ class PaymentWindow(tk.Toplevel):
             new_amount = product[5] - amount
             self.db.update_product_amount(product_id, new_amount)
 
-        # Сохраняем текст чека в БД
         receipt_text = self._build_receipt_text(
             date_str, self.payment_var.get(), self.total_sum, payed, refused)
         try:
@@ -123,13 +140,11 @@ class PaymentWindow(tk.Toplevel):
         self._last_check_id = check_id
         self._last_date_str = date_str
 
-        self.btn_view_receipt.config(state='normal')
-        self.btn_view_receipt.focus_set()
-
         messagebox.showinfo("Успех", "Оплата прошла успешно. Сдача: {0:.2f}".format(refused),
                             parent=self)
         self.refresh_products_callback()
         self.clear_cart_callback()
+        self._lock_after_payment()
 
     def view_receipt(self):
         if self._last_check_id is None:
@@ -147,4 +162,5 @@ class PaymentWindow(tk.Toplevel):
         ReceiptWindow(self, self._last_check_id, date_str, receipt_text)
 
     def on_close(self):
+        self.grab_release()
         self.destroy()

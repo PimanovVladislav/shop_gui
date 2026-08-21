@@ -1,6 +1,8 @@
 import tkinter as tk
 from tkinter import messagebox
-from utils import bind_entry_shortcuts
+from tkcalendar import DateEntry
+from datetime import datetime
+from utils import bind_entry_shortcuts, center_window, DATE_PATTERN, DATE_FMT, parse_date, format_date
 
 
 class SelectAllEntry(tk.Entry):
@@ -30,12 +32,6 @@ class SelectAllEntry(tk.Entry):
 
 
 class ProductEditWindow(tk.Toplevel):
-    """Product add/edit window.
-
-    on_saved callback is called after successful save of the current product
-    (used to open the next window from the edit queue).
-    """
-
     def __init__(self, master, db, refresh_callback, product=None, on_saved=None):
         super().__init__(master)
         self.db = db
@@ -44,9 +40,18 @@ class ProductEditWindow(tk.Toplevel):
         self.on_saved = on_saved
 
         self.title("Редактирование товара" if product else "Добавление товара")
-        self.geometry("400x300")
+        self.geometry("400x380")
         self.wm_iconbitmap("main_icon.ico")
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+        if product:
+            full = db.get_product_by_id(product[0])
+            if full:
+                purchase_date = full[7] if len(full) > 7 and full[7] else None
+            else:
+                purchase_date = None
+        else:
+            purchase_date = None
 
         tk.Label(self, text="Наименование:").pack()
         self.name_var = tk.StringVar(value=product[2] if product else "")
@@ -78,6 +83,20 @@ class ProductEditWindow(tk.Toplevel):
         self._amount_entry.pack()
         bind_entry_shortcuts(self._amount_entry)
 
+        tk.Label(self, text="Дата закупки:").pack()
+        date_frame = tk.Frame(self)
+        date_frame.pack()
+        self.purchase_date = DateEntry(
+            date_frame, locale="ru_RU", width=12,
+            background="darkblue", foreground="white",
+            borderwidth=2, date_pattern=DATE_PATTERN
+        )
+        self.purchase_date.pack()
+        if purchase_date:
+            d = parse_date(purchase_date)
+            if d:
+                self.purchase_date.set_date(d)
+
         btn_frame = tk.Frame(self)
         btn_frame.pack(pady=10)
 
@@ -89,6 +108,7 @@ class ProductEditWindow(tk.Toplevel):
         btn_save = tk.Button(btn_frame, text="Сохранить", command=self.save)
         btn_save.pack(side=tk.LEFT, padx=5)
 
+        center_window(self)
         self.after(50, self._focus_first_field)
 
     def _focus_first_field(self):
@@ -97,10 +117,12 @@ class ProductEditWindow(tk.Toplevel):
             self.name_entry.focus_set()
         except Exception:
             pass
+
+    def _get_purchase_date_str(self):
         try:
-            self.lift()
+            return self.purchase_date.get_date().strftime(DATE_FMT)
         except Exception:
-            pass
+            return None
 
     def _validate_and_collect(self):
         name = self.name_var.get().strip()
@@ -120,7 +142,7 @@ class ProductEditWindow(tk.Toplevel):
                                    "Числовые значения не могут быть отрицательными",
                                    parent=self)
             return None
-        return (name, code, buy_price, sale_price, amount)
+        return (name, code, buy_price, sale_price, amount, self._get_purchase_date_str())
 
     def _clear_fields(self):
         self.name_var.set("")
@@ -128,24 +150,29 @@ class ProductEditWindow(tk.Toplevel):
         self.buy_price_var.set(0.0)
         self.sale_price_var.set(0.0)
         self.amount_var.set(0)
+        self.purchase_date.set_date(datetime.today())
 
     def save(self):
         data = self._validate_and_collect()
         if data is None:
             self._focus_first_field()
             return
-        name, code, buy_price, sale_price, amount = data
+        name, code, buy_price, sale_price, amount, purchase_date = data
+        product_id = None
         if self.product:
+            product_id = self.product[0]
             c = self.db.conn.cursor()
             c.execute(
-                "UPDATE products SET name=?, code=?, buy_price=?, sale_price=?, amount=? "
-                "WHERE id=?",
-                (name, code, buy_price, sale_price, amount, self.product[0])
+                "UPDATE products SET name=?, code=?, buy_price=?, sale_price=?, "
+                "amount=?, purchase_date=? WHERE id=?",
+                (name, code, buy_price, sale_price, amount, purchase_date, product_id)
             )
             self.db.conn.commit()
         else:
-            self.db.add_product(name, code, buy_price, sale_price, amount)
-        self.refresh_callback()
+            product_id = self.db.add_product(
+                name, code, buy_price, sale_price, amount, purchase_date
+            )
+        self.refresh_callback(product_id)
         cb = self.on_saved
         self.on_saved = None
         self.destroy()
@@ -157,9 +184,11 @@ class ProductEditWindow(tk.Toplevel):
         if data is None:
             self._focus_first_field()
             return
-        name, code, buy_price, sale_price, amount = data
-        self.db.add_product(name, code, buy_price, sale_price, amount)
-        self.refresh_callback()
+        name, code, buy_price, sale_price, amount, purchase_date = data
+        product_id = self.db.add_product(
+            name, code, buy_price, sale_price, amount, purchase_date
+        )
+        self.refresh_callback(product_id)
         self._clear_fields()
         messagebox.showinfo("Готово", "Товар добавлен. Можно вводить следующий.",
                             parent=self)
