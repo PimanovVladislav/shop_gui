@@ -5,6 +5,7 @@ from check_window import ChecksWindow
 from cash_register_window import CashRegisterWindow
 from database_operation import Database
 from warehouse_window import WarehouseWindow
+from utils import center_window
 
 DB_NAME = 'fish_store.db'
 
@@ -32,6 +33,7 @@ class App(tk.Tk):
         btn_analysis.pack(pady=5)
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+        center_window(self)
 
     def open_cash_register(self):
         win = CashRegisterWindow(self, self.db)

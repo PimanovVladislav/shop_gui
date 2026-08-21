@@ -1,8 +1,74 @@
 import time
 import tkinter as tk
 from tkinter import ttk
+from datetime import datetime, date
 
-# Физическая клавиша (keycode) не зависит от раскладки — используется как запасной вариант.
+DATE_FMT = "%d.%m.%Y"
+DATETIME_FMT = "%d.%m.%Y %H:%M:%S"
+DATETIME_SHORT_FMT = "%d.%m.%Y %H:%M"
+DATE_PATTERN = "dd.mm.yyyy"
+
+
+def parse_date(value):
+    """Разбор даты из строки (ДД.ММ.ГГГГ или ГГГГ-ММ-ДД) или date/datetime."""
+    if value is None or value == '' or value == '—':
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    s = str(value).strip()
+    for fmt in (DATE_FMT, "%Y-%m-%d"):
+        try:
+            return datetime.strptime(s[:10], fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def parse_datetime(value):
+    """Разбор даты-времени из строки или datetime."""
+    if value is None or value == '':
+        return None
+    if isinstance(value, datetime):
+        return value
+    s = str(value).strip()
+    for fmt in (DATETIME_FMT, DATETIME_SHORT_FMT, "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            length = 19 if '%S' in fmt else 16
+            return datetime.strptime(s[:length], fmt)
+        except ValueError:
+            continue
+    d = parse_date(s)
+    return datetime.combine(d, datetime.min.time()) if d else None
+
+
+def format_date(value):
+    """Форматирование даты для отображения: ДД.ММ.ГГГГ."""
+    if value is None or value == '' or value == '—':
+        return '—'
+    if isinstance(value, datetime):
+        return value.strftime(DATE_FMT)
+    if isinstance(value, date):
+        return value.strftime(DATE_FMT)
+    d = parse_date(value)
+    return d.strftime(DATE_FMT) if d else str(value)
+
+
+def format_datetime(value, with_seconds=True):
+    """Форматирование даты-времени для отображения."""
+    if value is None or value == '':
+        return ''
+    fmt = DATETIME_FMT if with_seconds else DATETIME_SHORT_FMT
+    if isinstance(value, datetime):
+        return value.strftime(fmt)
+    dt = parse_datetime(value)
+    return dt.strftime(fmt) if dt else str(value)
+
+
+def today_str():
+    return datetime.today().strftime(DATE_FMT)
+
 _SHORTCUT_KEYCODE = {
     67: 'copy', 86: 'paste', 88: 'cut', 90: 'undo', 89: 'redo',
     65: 'select_all', 83: 'save', 80: 'print',
@@ -105,6 +171,24 @@ def bind_entry_shortcuts(widget):
     widget.bind('<Control-KeyPress>', _on_ctrl, add='+')
 
 
+def center_window(window):
+    """Разместить окно по центру экрана."""
+    window.update_idletasks()
+    width = window.winfo_width()
+    height = window.winfo_height()
+    x = (window.winfo_screenwidth() // 2) - (width // 2)
+    y = (window.winfo_screenheight() // 2) - (height // 2)
+    window.geometry(f"+{x}+{y}")
+
+
+def filter_with_checked(all_items, checked_keys, filter_func, key_func):
+    """Отмеченные элементы всегда вверху, остальные — по фильтру."""
+    checked = [item for item in all_items if key_func(item) in checked_keys]
+    filtered = [item for item in all_items
+                if key_func(item) not in checked_keys and filter_func(item)]
+    return checked + filtered
+
+
 class SortableTreeview(ttk.Frame):
     def __init__(self, master=None, checkbox_column=False, double_click_check=True,
                  search_change_callback=None, **kwargs):
@@ -169,6 +253,17 @@ class SortableTreeview(ttk.Frame):
         # Единственный обработчик Ctrl-сочетаний (работает в любой раскладке)
         self.tree.bind('<Control-KeyPress>', self._on_ctrl_key)
 
+        self.tree.tag_configure('selected_row', background='#d3d3d3')
+        self.tree.bind('<<TreeviewSelect>>', self._on_row_select)
+
+    def _on_row_select(self, event=None):
+        for item in self.tree.get_children():
+            tags = tuple(t for t in self.tree.item(item, 'tags') if t != 'selected_row')
+            self.tree.item(item, tags=tags)
+        for item in self.tree.selection():
+            tags = tuple(self.tree.item(item, 'tags')) + ('selected_row',)
+            self.tree.item(item, tags=tags)
+
     # ── Прокси ─────────────────────────────────────────────
     def heading(self, column, **kwargs):
         return self.tree.heading(column, **kwargs)
@@ -230,6 +325,23 @@ class SortableTreeview(ttk.Frame):
         return self.tree.tag_configure(tagName, **kwargs)
     def exists(self, item):
         return self.tree.exists(item)
+
+    def see(self, item):
+        return self.tree.see(item)
+
+    def move_checked_to_top(self):
+        checked = [iid for iid in self.tree.get_children('')
+                   if iid in self._checked_items]
+        for index, iid in enumerate(checked):
+            self.tree.move(iid, '', index)
+
+    def restore_checks(self):
+        for iid in self._checked_items:
+            if self.tree.exists(iid):
+                vals = list(self.tree.item(iid, 'values'))
+                if vals and self._checkbox_column:
+                    vals[0] = '\u2611'
+                    self.tree.item(iid, values=vals)
 
     # ── Клики ──────────────────────────────────────────────
     def _on_press(self, event):
@@ -492,6 +604,7 @@ class SortableTreeview(ttk.Frame):
         data.sort(key=lambda x: x[0], reverse=self._sort_reverse)
         for index, (_, iid) in enumerate(data):
             self.tree.move(iid, '', index)
+        self.move_checked_to_top()
 
     def _reset_order(self):
         order = [iid for iid in self._row_order if self.tree.exists(iid)]
@@ -541,6 +654,7 @@ class SortableTreeview(ttk.Frame):
         if values:
             values[0] = '\u2611' if iid in self._checked_items else '\u2610'
             self.tree.item(iid, values=values)
+        self.move_checked_to_top()
 
     def uncheck(self, iid):
         self._checked_items.discard(iid)
@@ -609,3 +723,12 @@ class SearchPanel(tk.Frame):
     def clear(self):
         self.entry.delete(0, tk.END)
         self.search_callback('')
+
+    def focus_search(self, event=None):
+        self.entry.focus_set()
+        self.entry.select_range(0, tk.END)
+        return 'break'
+
+    def bind_shortcuts(self, widget):
+        widget.bind('<Control-f>', self.focus_search)
+        widget.bind('<Control-F>', self.focus_search)

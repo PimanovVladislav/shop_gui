@@ -7,6 +7,7 @@ from datetime import datetime
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
+from utils import today_str
 
 
 class ExcelExporter:
@@ -68,10 +69,13 @@ class ExcelExporter:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"export_{timestamp}.xlsx"
 
+        date_str = today_str()
         desktop = os.path.join(os.path.expanduser("~"), "Desktop")
         if not os.path.exists(desktop):
             desktop = os.path.expanduser("~")
-        filepath = os.path.join(desktop, filename)
+        save_dir = os.path.join(desktop, "Таблицы", date_str)
+        os.makedirs(save_dir, exist_ok=True)
+        filepath = os.path.join(save_dir, filename)
 
         wb.save(filepath)
         return filepath

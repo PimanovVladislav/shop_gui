@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 from datetime import datetime
-from utils import SortableTreeview, SearchPanel
+from utils import SortableTreeview, SearchPanel, center_window
 from database_operation import Database
 from receipt_window import ReceiptWindow
 
@@ -25,6 +25,7 @@ class ChecksWindow(tk.Toplevel):
 
         self.search_panel = SearchPanel(main_frame, self.on_search)
         self.search_panel.pack(fill=tk.X, padx=5, pady=5)
+        self.search_panel.bind_shortcuts(self)
 
         left_panel = tk.Frame(main_frame)
         left_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -102,6 +103,10 @@ class ChecksWindow(tk.Toplevel):
         self.products_tree.tag_configure('selected', background='#d3d3d3')
 
         self.on_search('')
+        center_window(self)
+
+    def _status_map(self):
+        return {0: 'Ожидание оплаты', 1: 'Покупка', 2: 'Возврат', 3: 'Списание'}
 
     def refresh_checks(self):
         self.checks_tree.delete(*self.checks_tree.get_children())
@@ -115,7 +120,7 @@ class ChecksWindow(tk.Toplevel):
             "ORDER BY checks.date DESC"
         )
         rows = c.fetchall()
-        status_map = {0: 'Ожидание оплаты', 1: 'Покупка', 2: 'Возврат'}
+        status_map = self._status_map()
         for r in rows:
             self.checks_tree.insert('', 'end', values=(
                 r[0], r[1], status_map.get(r[2], 'Неизвестно'),
@@ -128,6 +133,10 @@ class ChecksWindow(tk.Toplevel):
         if not selected:
             return
         self.current_check_id = self.checks_tree.item(selected[0])['values'][0]
+        status = self.checks_tree.item(selected[0])['values'][2]
+        is_sale = status == 'Покупка'
+        self.btn_return_selected.config(state='normal' if is_sale else 'disabled')
+        self.btn_return_all.config(state='normal' if is_sale else 'disabled')
         self.refresh_products(self.current_check_id)
 
     def refresh_products(self, check_id):
@@ -298,7 +307,7 @@ class ChecksWindow(tk.Toplevel):
             "ORDER BY checks.date DESC"
         )
         rows = c.fetchall()
-        status_map = {0: 'Ожидание оплаты', 1: 'Покупка', 2: 'Возврат'}
+        status_map = self._status_map()
         for r in rows:
             id_str = str(r[0])
             date_str = r[1].lower()
