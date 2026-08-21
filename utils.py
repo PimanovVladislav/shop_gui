@@ -317,17 +317,20 @@ class SortableTreeview(ttk.Frame):
         finally:
             self.end_batch()
 
+    def _row_tags_for(self, iid):
+        if iid in self._checked_items:
+            return ('checked_row',)
+        if iid == self._active_row_iid:
+            return ('active_row',)
+        if iid == self._hover_iid:
+            return ('hover_row',)
+        return ()
+
     def _update_row_tags(self, iid):
         if not iid or not self.tree.exists(iid):
             return
-        tags = []
-        if iid in self._checked_items:
-            tags.append('checked_row')
-        elif iid == self._active_row_iid:
-            tags.append('active_row')
-        elif iid == self._hover_iid:
-            tags.append('hover_row')
-        self.tree.item(iid, tags=tuple(tags))
+        tags = self._row_tags_for(iid)
+        self.tree.item(iid, tags=tags)
         if tags and iid in self.tree.selection():
             self.tree.selection_remove(iid)
         self._flush_row_visual()
@@ -395,6 +398,11 @@ class SortableTreeview(ttk.Frame):
     def get_children(self, item=None):
         return self.tree.get_children(item)
     def item(self, item, option=None, **kwargs):
+        if 'values' in kwargs and self._checkbox_column:
+            values = tuple(kwargs['values'])
+            if not values or values[0] not in ('\u2610', '\u2611'):
+                mark = '\u2611' if item in self._checked_items else '\u2610'
+                kwargs['values'] = (mark,) + values
         return self.tree.item(item, option=option, **kwargs)
     def set(self, item, column=None, value=None):
         return self.tree.set(item, column, value)
@@ -432,8 +440,12 @@ class SortableTreeview(ttk.Frame):
         return self.tree.see(item)
 
     def move_checked_to_top(self):
-        checked = [iid for iid in self.tree.get_children('')
-                   if iid in self._checked_items]
+        children = self.tree.get_children('')
+        checked = [iid for iid in children if iid in self._checked_items]
+        if not checked:
+            return
+        if checked == list(children[:len(checked)]):
+            return
         for index, iid in enumerate(checked):
             self.tree.move(iid, '', index)
 
@@ -788,8 +800,14 @@ class SortableTreeview(ttk.Frame):
         values = list(self.tree.item(iid, 'values'))
         if values:
             values[0] = '\u2611' if iid in self._checked_items else '\u2610'
-            self.tree.item(iid, values=values)
-        self._update_row_tags(iid)
+            self.tree.item(iid, values=values, tags=self._row_tags_for(iid))
+        else:
+            self._update_row_tags(iid)
+            self.move_checked_to_top()
+            return
+        if iid in self.tree.selection():
+            self.tree.selection_remove(iid)
+        self._flush_row_visual()
         self.move_checked_to_top()
 
     def uncheck(self, iid):
@@ -808,26 +826,43 @@ class SortableTreeview(ttk.Frame):
         return result
 
     def check_all(self):
-        for iid in self.tree.get_children(''):
-            if iid not in self._checked_items:
+        children = self.tree.get_children('')
+        to_check = [iid for iid in children if iid not in self._checked_items]
+        if not to_check:
+            return
+        self.begin_batch()
+        try:
+            for iid in to_check:
                 self._checked_items.add(iid)
                 values = list(self.tree.item(iid, 'values'))
                 if values:
                     values[0] = '\u2611'
-                    self.tree.item(iid, values=values)
-                self._update_row_tags(iid)
-        self._flush_row_visual()
+                    self.tree.item(iid, values=values, tags=('checked_row',))
+                else:
+                    self.tree.item(iid, tags=('checked_row',))
+                if iid in self.tree.selection():
+                    self.tree.selection_remove(iid)
+        finally:
+            self.end_batch()
 
     def uncheck_all(self):
-        for iid in self.tree.get_children(''):
-            if iid in self._checked_items:
+        children = self.tree.get_children('')
+        to_uncheck = [iid for iid in children if iid in self._checked_items]
+        if not to_uncheck:
+            return
+        self.begin_batch()
+        try:
+            for iid in to_uncheck:
                 self._checked_items.discard(iid)
                 values = list(self.tree.item(iid, 'values'))
+                tags = self._row_tags_for(iid)
                 if values:
                     values[0] = '\u2610'
-                    self.tree.item(iid, values=values)
-                self._update_row_tags(iid)
-        self._flush_row_visual()
+                    self.tree.item(iid, values=values, tags=tags)
+                else:
+                    self.tree.item(iid, tags=tags)
+        finally:
+            self.end_batch()
 
     def clear_checks(self):
         checked = list(self._checked_items)

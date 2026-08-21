@@ -28,7 +28,11 @@ class SelectAllEntry(tk.Entry):
             self.after_cancel(self._after_id)
             self._after_id = None
         self.select_clear()
-        self.icursor('@%d,%d' % (event.x, event.y))
+        try:
+            self.icursor(self.index(f"@{event.x},{event.y}"))
+        except tk.TclError:
+            self.icursor(tk.END)
+        return 'break'
 
 
 class ProductEditWindow(tk.Toplevel):
@@ -93,11 +97,22 @@ class ProductEditWindow(tk.Toplevel):
             background="darkblue", foreground="white",
             borderwidth=2, date_pattern=DATE_PATTERN
         )
-        self.purchase_date.pack()
-        if purchase_date:
-            d = parse_date(purchase_date)
-            if d:
-                self.purchase_date.set_date(d)
+        self.purchase_date.pack(side=tk.LEFT)
+
+        has_date = bool(purchase_date) and parse_date(purchase_date) is not None
+        self.empty_date_var = tk.BooleanVar(value=not has_date)
+        self.empty_date_cb = tk.Checkbutton(
+            date_frame, text="Оставить пустым",
+            variable=self.empty_date_var,
+            command=self._on_empty_date_toggle
+        )
+        self.empty_date_cb.pack(side=tk.LEFT, padx=(8, 0))
+
+        if has_date:
+            self.purchase_date.set_date(parse_date(purchase_date))
+        else:
+            self.purchase_date.set_date(datetime.today())
+        self._on_empty_date_toggle()
 
         btn_frame = tk.Frame(self)
         btn_frame.pack(pady=10)
@@ -120,7 +135,15 @@ class ProductEditWindow(tk.Toplevel):
         except Exception:
             pass
 
+    def _on_empty_date_toggle(self):
+        if self.empty_date_var.get():
+            self.purchase_date.config(state='disabled')
+        else:
+            self.purchase_date.config(state='normal')
+
     def _get_purchase_date_str(self):
+        if self.empty_date_var.get():
+            return None
         try:
             return self.purchase_date.get_date().strftime(DATE_FMT)
         except Exception:
@@ -153,6 +176,8 @@ class ProductEditWindow(tk.Toplevel):
         self.sale_price_var.set(0.0)
         self.amount_var.set(0)
         self.purchase_date.set_date(datetime.today())
+        self.empty_date_var.set(True)
+        self._on_empty_date_toggle()
 
     def save(self):
         data = self._validate_and_collect()
