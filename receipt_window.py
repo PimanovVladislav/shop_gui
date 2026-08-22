@@ -5,6 +5,7 @@ import tempfile
 import tkinter as tk
 from datetime import datetime
 from tkinter import messagebox
+from resources.i18n import t
 from utils import center_window, format_datetime, parse_datetime, DATE_FMT, today_str, bind_ctrl_shortcuts
 
 try:
@@ -30,7 +31,7 @@ class ReceiptWindow(tk.Toplevel):
         self.receipt_text = receipt_text or ""
         self._display_datetime = format_datetime(self.date_str)
 
-        self.title("Чек №{0}".format(check_id))
+        self.title(t('receipt.title', id=check_id))
         self.geometry("500x620")
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.grab_set()
@@ -43,15 +44,15 @@ class ReceiptWindow(tk.Toplevel):
         btn_frame = tk.Frame(self)
         btn_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
 
-        self.btn_print = tk.Button(btn_frame, text="Печать (Ctrl+P)",
+        self.btn_print = tk.Button(btn_frame, text=t('receipt.btn.print'),
                                    command=self.print_receipt)
         self.btn_print.pack(side=tk.LEFT, padx=5)
 
-        self.btn_save = tk.Button(btn_frame, text="Сохранить (Ctrl+S)",
+        self.btn_save = tk.Button(btn_frame, text=t('receipt.btn.save'),
                                   command=self.save_pdf)
         self.btn_save.pack(side=tk.LEFT, padx=5)
 
-        self.btn_close = tk.Button(btn_frame, text="Закрыть (Пробел/Enter)",
+        self.btn_close = tk.Button(btn_frame, text=t('receipt.btn.close'),
                                    command=self.on_close)
         self.btn_close.pack(side=tk.LEFT, padx=5)
 
@@ -101,7 +102,7 @@ class ReceiptWindow(tk.Toplevel):
         desktop = os.path.join(os.path.expanduser("~"), "Desktop")
         if not os.path.isdir(desktop):
             desktop = os.path.expanduser("~")
-        receipts_dir = os.path.join(desktop, "Чеки")
+        receipts_dir = os.path.join(desktop, t('receipt.folder_name'))
 
         date_folder = parse_datetime(self.date_str)
         date_folder = date_folder.strftime(DATE_FMT) if date_folder else today_str()
@@ -111,7 +112,7 @@ class ReceiptWindow(tk.Toplevel):
         dt = parse_datetime(self.date_str) or datetime.now()
         time_part = dt.strftime("%H-%M-%S")
 
-        filename = "Чек {0}_{1}.pdf".format(self.check_id, time_part)
+        filename = t('receipt.pdf_filename', id=self.check_id, time=time_part)
         return os.path.join(target_dir, filename)
 
     @staticmethod
@@ -131,10 +132,7 @@ class ReceiptWindow(tk.Toplevel):
 
     def _write_pdf(self, filepath):
         if not HAS_FPDF:
-            messagebox.showerror(
-                "Ошибка",
-                "Не установлена библиотека fpdf2.\nУстановите её командой: pip install fpdf2",
-                parent=self)
+            messagebox.showerror(t('common.error'), t('receipt.no_fpdf'), parent=self)
             return False
         try:
             pdf = FPDF()
@@ -156,24 +154,21 @@ class ReceiptWindow(tk.Toplevel):
             pdf.output(filepath)
             return True
         except Exception as e:
-            messagebox.showerror("Ошибка",
-                                 "Не удалось сохранить PDF:\n{0}".format(e),
+            messagebox.showerror(t('common.error'),
+                                 t('receipt.save_error', error=e),
                                  parent=self)
             return False
 
     def save_pdf(self):
         filepath = self._build_filepath()
         if self._write_pdf(filepath):
-            messagebox.showinfo("Сохранение",
-                                "Чек сохранён:\n{0}".format(filepath),
+            messagebox.showinfo(t('receipt.save_title'),
+                                t('receipt.save_success', path=filepath),
                                 parent=self)
 
     def print_receipt(self):
         if not HAS_FPDF:
-            messagebox.showerror(
-                "Ошибка",
-                "Не установлена библиотека fpdf2.\nУстановите её командой: pip install fpdf2",
-                parent=self)
+            messagebox.showerror(t('common.error'), t('receipt.no_fpdf'), parent=self)
             return
         tmp = os.path.join(tempfile.gettempdir(),
                            "receipt_{0}.pdf".format(self.check_id))
@@ -187,8 +182,8 @@ class ReceiptWindow(tk.Toplevel):
             else:
                 subprocess.run(["lp", tmp])
         except Exception as e:
-            messagebox.showerror("Ошибка",
-                                 "Не удалось отправить на печать:\n{0}".format(e),
+            messagebox.showerror(t('common.error'),
+                                 t('receipt.print_error', error=e),
                                  parent=self)
 
     def on_close(self):

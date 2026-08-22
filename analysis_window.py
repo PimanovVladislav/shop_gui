@@ -2,14 +2,15 @@ import tkinter as tk
 from tkinter import messagebox
 from tkcalendar import DateEntry
 from datetime import datetime
-from utils import SearchPanel, SortableTreeview, filter_with_checked, center_window, DATE_PATTERN, format_date, today_str
+from resources.i18n import t
+from utils import SearchPanel, SortableTreeview, filter_with_checked, center_window, DATE_PATTERN, format_date, today_str, setup_table_navigation, unregister_table_navigation
 from excel_export import ExcelExporter
 
 
 class AnalysisWindow(tk.Toplevel):
     def __init__(self, master, db):
         super().__init__(master)
-        self.title("Анализ продаж")
+        self.title(t('analysis.title'))
         self.geometry("1100x650")
         self.state('zoomed')
         self.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -18,19 +19,19 @@ class AnalysisWindow(tk.Toplevel):
         top_frame = tk.Frame(self)
         top_frame.pack(fill=tk.X, padx=10, pady=5)
 
-        tk.Label(top_frame, text="Период с:").pack(side=tk.LEFT)
+        tk.Label(top_frame, text=t('analysis.period_from')).pack(side=tk.LEFT)
         self.date_from = DateEntry(top_frame, locale="ru_RU", width=12,
                                    background="darkblue", foreground="white",
                                    borderwidth=2, date_pattern=DATE_PATTERN)
         self.date_from.pack(side=tk.LEFT, padx=5)
 
-        tk.Label(top_frame, text="по:").pack(side=tk.LEFT)
+        tk.Label(top_frame, text=t('analysis.period_to')).pack(side=tk.LEFT)
         self.date_to = DateEntry(top_frame, locale="ru_RU", width=12,
                                  background="darkblue", foreground="white",
                                  borderwidth=2, date_pattern=DATE_PATTERN)
         self.date_to.pack(side=tk.LEFT, padx=5)
 
-        tk.Button(top_frame, text="Обновить",
+        tk.Button(top_frame, text=t('analysis.btn.refresh'),
                   command=self.refresh_data).pack(side=tk.LEFT, padx=10)
 
         self.search_panel = SearchPanel(top_frame, search_callback=self.filter_rows)
@@ -45,17 +46,17 @@ class AnalysisWindow(tk.Toplevel):
         )
 
         headings = {
-            "check": "☐",
-            "last_sale_date": "Дата последней продажи",
-            "product_id": "Код товара",
-            "product_name": "Наименование",
-            "sold_qty": "Продано шт.",
-            "returned_qty": "Возврат шт.",
-            "net_qty": "Итого шт.",
-            "stock_qty": "Остаток на складе",
-            "sold_sum": "Сумма продаж",
-            "returned_sum": "Сумма возвратов",
-            "net_sum": "Итого сумма",
+            "check": t('common.checkbox_header'),
+            "last_sale_date": t('analysis.col.last_sale'),
+            "product_id": t('analysis.col.code'),
+            "product_name": t('analysis.col.name'),
+            "sold_qty": t('analysis.col.sold_qty'),
+            "returned_qty": t('analysis.col.returned_qty'),
+            "net_qty": t('analysis.col.net_qty'),
+            "stock_qty": t('analysis.col.stock'),
+            "sold_sum": t('analysis.col.sold_sum'),
+            "returned_sum": t('analysis.col.returned_sum'),
+            "net_sum": t('analysis.col.net_sum'),
         }
         for col in columns:
             self.tree.heading(col, text=headings[col])
@@ -69,20 +70,20 @@ class AnalysisWindow(tk.Toplevel):
 
         btn_row = tk.Frame(self)
         btn_row.pack(fill=tk.X, padx=10, pady=(0, 5))
-        tk.Button(btn_row, text="Экспорт в Excel",
+        tk.Button(btn_row, text=t('analysis.btn.export'),
                   command=self.export_to_excel).pack(side=tk.LEFT, padx=2)
 
         summary_frame = tk.Frame(self)
         summary_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
 
         self.label_total_earned = tk.Label(summary_frame,
-                                           text="Всего заработано: 0.00")
+                                           text=t('analysis.total_earned', sum='0.00'))
         self.label_total_earned.pack(anchor=tk.W, pady=2)
         self.label_top_sold = tk.Label(summary_frame,
-                                       text="Самый продаваемый товар: -")
+                                       text=t('analysis.top_sold_empty'))
         self.label_top_sold.pack(anchor=tk.W, pady=2)
         self.label_top_earned = tk.Label(summary_frame,
-                                         text="Товар с наибольшей выручкой: -")
+                                         text=t('analysis.top_earned_empty'))
         self.label_top_earned.pack(anchor=tk.W, pady=2)
 
         today = datetime.today()
@@ -90,6 +91,7 @@ class AnalysisWindow(tk.Toplevel):
         self.date_to.set_date(today)
 
         self.all_rows = []
+        setup_table_navigation(self, [self.tree])
         center_window(self)
         self.refresh_data()
 
@@ -98,8 +100,7 @@ class AnalysisWindow(tk.Toplevel):
         date_to = self.date_to.get_date()
 
         if date_from > date_to:
-            messagebox.showerror("Ошибка",
-                                 "Дата начала не может быть позже даты конца.",
+            messagebox.showerror(t('common.error'), t('analysis.date_range_error'),
                                  parent=self)
             return
 
@@ -164,37 +165,42 @@ class AnalysisWindow(tk.Toplevel):
 
     def update_summaries(self, rows):
         if not rows:
-            self.label_total_earned.config(text="Всего заработано: 0.00")
-            self.label_top_sold.config(text="Самый продаваемый товар: -")
-            self.label_top_earned.config(text="Товар с наибольшей выручкой: -")
+            self.label_total_earned.config(text=t('analysis.total_earned', sum='0.00'))
+            self.label_top_sold.config(text=t('analysis.top_sold_empty'))
+            self.label_top_earned.config(text=t('analysis.top_earned_empty'))
             return
         total_earned = sum(float(row[9]) for row in rows)
         top_sold = max(rows, key=lambda r: int(r[5]))
         top_earned = max(rows, key=lambda r: float(r[9]))
-        self.label_total_earned.config(text=f"Всего заработано: {total_earned:.2f}")
+        self.label_total_earned.config(
+            text=t('analysis.total_earned', sum=f'{total_earned:.2f}'))
         self.label_top_sold.config(
-            text=f"Самый продаваемый товар: Код {top_sold[1]}, {top_sold[2]}, "
-                 f"Кол-во: {top_sold[5]}")
+            text=t('analysis.top_sold', code=top_sold[1], name=top_sold[2], qty=top_sold[5]))
         self.label_top_earned.config(
-            text=f"Товар с наибольшей выручкой: Код {top_earned[1]}, {top_earned[2]}, "
-                 f"Сумма: {float(top_earned[9]):.2f}")
+            text=t('analysis.top_earned', code=top_earned[1], name=top_earned[2],
+                   sum=f'{float(top_earned[9]):.2f}'))
 
     def export_to_excel(self):
         checked = self.tree.get_checked_values()
         rows = checked if checked else self.all_rows
         if not rows:
-            messagebox.showwarning("Внимание", "Нет данных для экспорта.", parent=self)
+            messagebox.showwarning(t('common.attention'), t('analysis.no_data'), parent=self)
             return
-        headers = ["Дата последней продажи", "Код товара", "Наименование",
-                   "Продано шт.", "Возврат шт.", "Итого шт.", "Остаток",
-                   "Сумма продаж", "Сумма возвратов", "Итого сумма"]
-        filename = f"Отчет_{today_str()}.xlsx"
+        headers = [
+            t('analysis.col.last_sale'), t('analysis.col.code'), t('analysis.col.name'),
+            t('analysis.col.sold_qty'), t('analysis.col.returned_qty'), t('analysis.col.net_qty'),
+            t('analysis.col.stock'), t('analysis.col.sold_sum'),
+            t('analysis.col.returned_sum'), t('analysis.col.net_sum'),
+        ]
+        filename = t('analysis.export_filename', date=today_str())
         filepath = ExcelExporter.export_data(
-            headers, rows, filename=filename, sheet_title="Анализ продаж")
+            headers, rows, filename=filename, sheet_title=t('analysis.export_sheet'))
         ExcelExporter.open_file(filepath)
-        messagebox.showinfo("Экспорт", f"Файл сохранён:\n{filepath}", parent=self)
+        messagebox.showinfo(t('common.export'), t('analysis.export_saved', path=filepath),
+                            parent=self)
 
     def on_close(self):
+        unregister_table_navigation(self)
         if hasattr(self.master, "child_windows") and self in self.master.child_windows:
             self.master.child_windows.remove(self)
         self.destroy()

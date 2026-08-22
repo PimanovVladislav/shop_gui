@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import messagebox
+from resources.i18n import t
 from utils import center_window, bind_entry_shortcuts, format_date
 
 
@@ -42,30 +43,37 @@ class WriteOffWindow(tk.Toplevel):
         product = (self.store.get_db_row(product_id) if self.store
                    else db.get_product_by_id(product_id))
         if not product:
-            messagebox.showerror("Ошибка", "Товар не найден.", parent=master)
+            messagebox.showerror(t('common.error'), t('write_off.product_not_found'),
+                                 parent=master)
             self.destroy()
             return
 
         purchase_date = product[7] if len(product) > 7 else ''
         if purchase_date is None:
             purchase_date = ''
+        supplier = product[8] if len(product) > 8 else ''
+        if supplier is None:
+            supplier = ''
 
-        self.title("Списание товара")
+        self.title(t('write_off.title'))
         self.geometry("420x380")
         self.wm_iconbitmap("main_icon.ico")
         self.protocol("WM_DELETE_WINDOW", self.destroy)
 
-        info_frame = tk.LabelFrame(self, text="Информация о товаре", padx=10, pady=10)
+        info_frame = tk.LabelFrame(self, text=t('write_off.info_group'), padx=10, pady=10)
         info_frame.pack(fill=tk.X, padx=10, pady=10)
 
         fields = [
-            ("ID:", product[0]),
-            ("Код:", product[2]),
-            ("Наименование:", product[1]),
-            ("Цена закупки:", f"{product[3]:.2f}"),
-            ("Цена продажи:", f"{product[4]:.2f}"),
-            ("На складе:", product[5]),
-            ("Дата закупки:", format_date(purchase_date) if purchase_date else "—"),
+            (t('warehouse.col.id') + ':', product[0]),
+            (t('warehouse.col.code') + ':', product[2]),
+            (t('warehouse.col.name') + ':', product[1]),
+            (t('warehouse.col.buy_price') + ':', f"{product[3]:.2f}"),
+            (t('warehouse.col.sale_price') + ':', f"{product[4]:.2f}"),
+            (t('write_off.field.stock'), product[5]),
+            (t('warehouse.col.purchase_date') + ':',
+             format_date(purchase_date) if purchase_date else t('common.dash')),
+            (t('write_off.field.supplier'),
+             supplier if supplier else t('common.dash')),
         ]
         for label, value in fields:
             row = tk.Frame(info_frame)
@@ -79,7 +87,7 @@ class WriteOffWindow(tk.Toplevel):
 
         qty_frame = tk.Frame(self)
         qty_frame.pack(fill=tk.X, padx=10, pady=10)
-        tk.Label(qty_frame, text="Количество для списания:").pack(side=tk.LEFT)
+        tk.Label(qty_frame, text=t('write_off.qty_label')).pack(side=tk.LEFT)
         self.qty_var = tk.IntVar(value=0)
         self.qty_spin = WheelSpinbox(
             qty_frame, from_=0, to=product[5], textvariable=self.qty_var, width=8
@@ -89,8 +97,10 @@ class WriteOffWindow(tk.Toplevel):
 
         btn_frame = tk.Frame(self)
         btn_frame.pack(pady=15)
-        tk.Button(btn_frame, text="Списать", command=self.do_write_off).pack(side=tk.LEFT, padx=5)
-        tk.Button(btn_frame, text="Отмена", command=self.destroy).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn_frame, text=t('write_off.btn.submit'),
+                  command=self.do_write_off).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn_frame, text=t('common.cancel'),
+                  command=self.destroy).pack(side=tk.LEFT, padx=5)
 
         center_window(self)
         self.after(50, lambda: self.qty_spin.focus_set())
@@ -99,21 +109,25 @@ class WriteOffWindow(tk.Toplevel):
         try:
             amount = int(self.qty_var.get())
         except ValueError:
-            messagebox.showwarning("Внимание", "Введите корректное количество.", parent=self)
+            messagebox.showwarning(t('common.attention'), t('write_off.invalid_qty'),
+                                   parent=self)
             return
         if amount <= 0:
-            messagebox.showwarning("Внимание", "Укажите количество больше 0.", parent=self)
+            messagebox.showwarning(t('common.attention'), t('write_off.qty_zero'),
+                                   parent=self)
             return
         try:
             check_id = self.db.write_off_product(self.product_id, amount)
         except ValueError as e:
-            messagebox.showwarning("Внимание", str(e), parent=self)
+            messagebox.showwarning(t('common.attention'), str(e), parent=self)
             return
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось списать товар: {e}", parent=self)
+            messagebox.showerror(t('common.error'), t('write_off.failed', error=e),
+                                 parent=self)
             return
         if self.store:
             self.store.apply_amount_delta(self.product_id, -amount)
-        messagebox.showinfo("Успех", f"Товар списан. Чек №{check_id}.", parent=self)
+        messagebox.showinfo(t('common.success'), t('write_off.success', id=check_id),
+                            parent=self)
         self.refresh_callback(self.product_id)
         self.destroy()
