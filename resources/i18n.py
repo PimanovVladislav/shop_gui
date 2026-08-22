@@ -7,10 +7,11 @@ from domain.constants import (
     CHECK_STATUS_SALE,
     CHECK_STATUS_WRITEOFF,
 )
+from resources.strings import en, ru
 
-_LOCALES = {
-    'ru': 'resources.strings.ru',
-    'en': 'resources.strings.en',
+_LOCALE_MODULES = {
+    'ru': ru,
+    'en': en,
 }
 
 _CHECK_STATUS_KEYS = {
@@ -29,8 +30,7 @@ def load_locale(locale: str = DEFAULT_LOCALE):
     global _current_locale, _strings
     if locale not in SUPPORTED_LOCALES:
         locale = DEFAULT_LOCALE
-    module_name = _LOCALES[locale]
-    module = __import__(module_name, fromlist=['STRINGS'])
+    module = _LOCALE_MODULES[locale]
     _strings = dict(module.STRINGS)
     _current_locale = locale
 
@@ -58,5 +58,4 @@ def check_status_label(status_id: int) -> str:
     return t(key)
 
 
-# Загрузка локали по умолчанию при импорте модуля
 load_locale()

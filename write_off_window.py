@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import messagebox
+from config.paths import resource_path
 from resources.i18n import t
 from utils import center_window, bind_entry_shortcuts, format_date
 
@@ -57,7 +58,7 @@ class WriteOffWindow(tk.Toplevel):
 
         self.title(t('write_off.title'))
         self.geometry("420x380")
-        self.wm_iconbitmap("main_icon.ico")
+        self.wm_iconbitmap(resource_path('main_icon.ico'))
         self.protocol("WM_DELETE_WINDOW", self.destroy)
 
         info_frame = tk.LabelFrame(self, text=t('write_off.info_group'), padx=10, pady=10)

@@ -1,17 +1,12 @@
 """Шаблоны печатных чеков (не UI)."""
 
 from config.settings import DEFAULT_LOCALE
+from . import en, ru
 
-_LOCALES = {
-    'ru': 'resources.receipt_templates.ru',
-    'en': 'resources.receipt_templates.en',
+_TEMPLATES = {
+    'ru': (ru.TEMPLATES, ru.WIDTH),
+    'en': (en.TEMPLATES, en.WIDTH),
 }
-
-
-def _load_templates(locale: str):
-    module_name = _LOCALES.get(locale, _LOCALES[DEFAULT_LOCALE])
-    module = __import__(module_name, fromlist=['TEMPLATES', 'WIDTH'])
-    return module.TEMPLATES, module.WIDTH
 
 
 def build_sale_receipt(cart, date_str, payment_type_name, total_sum, payed, refused,
@@ -24,7 +19,7 @@ def build_sale_receipt(cart, date_str, payment_type_name, total_sum, payed, refu
         from resources.i18n import get_locale
         locale = get_locale()
 
-    tpl, width = _load_templates(locale)
+    tpl, width = _TEMPLATES.get(locale, _TEMPLATES[DEFAULT_LOCALE])
 
     def sep(char):
         return char * width

@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox
 from payment_window import PaymentWindow
+from config.paths import resource_path
 from resources.i18n import t
 from utils import (SortableTreeview, SearchPanel, bind_entry_shortcuts, center_window,
                    setup_table_navigation, unregister_table_navigation,
@@ -15,7 +16,7 @@ class CashRegisterWindow(tk.Toplevel):
         self.title(t('cash.title'))
         self.geometry("1100x550")
         self.state('zoomed')
-        self.wm_iconbitmap("main_icon.ico")
+        self.wm_iconbitmap(resource_path('main_icon.ico'))
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self.all_products = []

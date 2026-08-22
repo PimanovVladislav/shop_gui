@@ -3,6 +3,7 @@ from tkinter import messagebox
 from tkcalendar import DateEntry
 from datetime import datetime
 
+from config.paths import resource_path
 from resources.i18n import t
 from utils import bind_entry_shortcuts, center_window, DATE_PATTERN, DATE_FMT, parse_date, format_date
 
@@ -49,7 +50,7 @@ class ProductEditWindow(tk.Toplevel):
 
         self.title(t('product_edit.title.edit') if product else t('product_edit.title.add'))
         self.geometry("400x430")
-        self.wm_iconbitmap("main_icon.ico")
+        self.wm_iconbitmap(resource_path('main_icon.ico'))
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
         if product:

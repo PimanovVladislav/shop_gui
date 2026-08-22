@@ -6,6 +6,7 @@ from cash_register_window import CashRegisterWindow
 from check_window import ChecksWindow
 from database_operation import Database
 from product_store import ProductStore
+from config.paths import resource_path
 from resources.i18n import load_locale, t
 from warehouse_window import WarehouseWindow
 from utils import center_window
@@ -18,7 +19,7 @@ class App(tk.Tk):
 
         self.title(t('app.title'))
         self.geometry('300x200')
-        self.wm_iconbitmap('main_icon.ico')
+        self.wm_iconbitmap(resource_path('main_icon.ico'))
 
         self.db = Database()
         self.product_store = ProductStore(self.db)

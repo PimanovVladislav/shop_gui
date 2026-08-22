@@ -3,6 +3,7 @@ from tkinter import messagebox, simpledialog, ttk
 
 from domain.constants import CHECK_STATUS_SALE
 from receipt_window import ReceiptWindow
+from config.paths import resource_path
 from resources.i18n import check_status_label, t
 from utils import SortableTreeview, SearchPanel, center_window, setup_table_navigation, unregister_table_navigation
 
@@ -14,7 +15,7 @@ class ChecksWindow(tk.Toplevel):
         self.title(t('checks.title'))
         self.geometry('1200x550')
         self.state('zoomed')
-        self.wm_iconbitmap('main_icon.ico')
+        self.wm_iconbitmap(resource_path('main_icon.ico'))
         self.protocol('WM_DELETE_WINDOW', self.on_close)
 
         style = ttk.Style(self)
