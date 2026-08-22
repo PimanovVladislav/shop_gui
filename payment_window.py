@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox
 from datetime import datetime
+from config.paths import resource_path
 from resources.receipt_templates import build_sale_receipt
 from resources.i18n import t
 from utils import bind_entry_shortcuts, center_window, format_datetime
@@ -19,7 +20,7 @@ class PaymentWindow(tk.Toplevel):
 
         self.title(t('payment.title'))
         self.geometry("300x360")
-        self.wm_iconbitmap("main_icon.ico")
+        self.wm_iconbitmap(resource_path('main_icon.ico'))
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self._paid = False

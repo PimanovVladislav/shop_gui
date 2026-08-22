@@ -4,6 +4,7 @@ from datetime import datetime
 from database_operation import Database
 from product_edit_window import ProductEditWindow
 from write_off_window import WriteOffWindow
+from config.paths import resource_path
 from resources.i18n import t
 from utils import SearchPanel, SortableTreeview, filter_with_checked, center_window, format_date, today_str, setup_table_navigation, unregister_table_navigation
 from excel_export import ExcelExporter
@@ -17,7 +18,7 @@ class WarehouseWindow(tk.Toplevel):
         self.title(t('warehouse.title'))
         self.geometry("1000x500")
         self.state('zoomed')
-        self.wm_iconbitmap("main_icon.ico")
+        self.wm_iconbitmap(resource_path('main_icon.ico'))
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self.all_products = []
