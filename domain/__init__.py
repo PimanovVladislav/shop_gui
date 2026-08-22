@@ -1,0 +1,13 @@
+from domain.constants import (
+    CHECK_STATUS_PENDING,
+    CHECK_STATUS_SALE,
+    CHECK_STATUS_RETURN,
+    CHECK_STATUS_WRITEOFF,
+)
+
+__all__ = [
+    'CHECK_STATUS_PENDING',
+    'CHECK_STATUS_SALE',
+    'CHECK_STATUS_RETURN',
+    'CHECK_STATUS_WRITEOFF',
+]

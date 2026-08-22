@@ -1,0 +1,3 @@
+from config.settings import DEFAULT_LOCALE, SUPPORTED_LOCALES
+
+__all__ = ['DEFAULT_LOCALE', 'SUPPORTED_LOCALES']

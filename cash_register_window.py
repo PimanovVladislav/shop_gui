@@ -1,7 +1,10 @@
 import tkinter as tk
 from tkinter import messagebox
 from payment_window import PaymentWindow
-from utils import SortableTreeview, SearchPanel, bind_entry_shortcuts, center_window
+from resources.i18n import t
+from utils import (SortableTreeview, SearchPanel, bind_entry_shortcuts, center_window,
+                   setup_table_navigation, unregister_table_navigation,
+                   register_cash_key_handlers, unregister_cash_key_handlers, get_table_navigation)
 
 
 class CashRegisterWindow(tk.Toplevel):
@@ -9,7 +12,7 @@ class CashRegisterWindow(tk.Toplevel):
         super().__init__(master)
         self.db = db
         self.store = master.product_store
-        self.title("Касса")
+        self.title(t('cash.title'))
         self.geometry("1100x550")
         self.state('zoomed')
         self.wm_iconbitmap("main_icon.ico")
@@ -33,10 +36,10 @@ class CashRegisterWindow(tk.Toplevel):
             checkbox_column=False,
             double_click_check=False
         )
-        self.products_tree.heading('code', text='Код')
-        self.products_tree.heading('name', text='Наименование')
-        self.products_tree.heading('price', text='Цена продажи')
-        self.products_tree.heading('amount', text='На складе')
+        self.products_tree.heading('code', text=t('cash.col.code'))
+        self.products_tree.heading('name', text=t('cash.col.name'))
+        self.products_tree.heading('price', text=t('cash.col.price'))
+        self.products_tree.heading('amount', text=t('cash.col.stock'))
         self.products_tree.column('code', width=60)
         self.products_tree.column('name', width=240)
         self.products_tree.column('price', width=90)
@@ -44,24 +47,23 @@ class CashRegisterWindow(tk.Toplevel):
         self.products_tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=(0, 5))
         self.products_tree.setup_sorting()
         self.products_tree.bind('<Double-1>', self._on_product_double_click)
-        self.products_tree.bind('<Return>', self._on_products_enter)
 
         qty_frame = tk.Frame(main_frame)
         qty_frame.pack(fill=tk.X, padx=5, pady=5)
-        tk.Label(qty_frame, text="Количество:").pack(side=tk.LEFT)
+        tk.Label(qty_frame, text=t('cash.qty_label')).pack(side=tk.LEFT)
         self.qty_var = tk.IntVar(value=1)
         self.qty_spinbox = tk.Spinbox(qty_frame, from_=1, to=1000,
                                       textvariable=self.qty_var, width=6)
         self.qty_spinbox.pack(side=tk.LEFT, padx=(0, 10))
         bind_entry_shortcuts(self.qty_spinbox)
-        self.btn_add = tk.Button(qty_frame, text="Добавить в корзину (Enter)",
+        self.btn_add = tk.Button(qty_frame, text=t('cash.btn.add'),
                                  takefocus=0, command=self.add_to_cart)
         self.btn_add.pack(side=tk.LEFT)
 
         right_frame = tk.Frame(self)
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=False, padx=(5, 5))
 
-        tk.Label(right_frame, text="Корзина", font=("Arial", 12, "bold")).pack()
+        tk.Label(right_frame, text=t('cash.cart_title'), font=("Arial", 12, "bold")).pack()
 
         self.cart_tree = SortableTreeview(
             right_frame,
@@ -69,11 +71,11 @@ class CashRegisterWindow(tk.Toplevel):
             show='headings',
             checkbox_column=True,
         )
-        self.cart_tree.heading('check', text='☐')
-        self.cart_tree.heading('name', text='Наименование')
-        self.cart_tree.heading('price', text='Цена')
-        self.cart_tree.heading('amount', text='Кол-во')
-        self.cart_tree.heading('sum', text='Сумма')
+        self.cart_tree.heading('check', text=t('common.checkbox_header'))
+        self.cart_tree.heading('name', text=t('cash.col.name'))
+        self.cart_tree.heading('price', text=t('cash.col.price'))
+        self.cart_tree.heading('amount', text=t('cash.col.qty'))
+        self.cart_tree.heading('sum', text=t('cash.col.sum'))
         self.cart_tree.column('check', width=30, stretch=False)
         self.cart_tree.column('name', width=200)
         self.cart_tree.column('price', width=80)
@@ -82,7 +84,6 @@ class CashRegisterWindow(tk.Toplevel):
         self.cart_tree.pack(fill=tk.BOTH, expand=True)
         self.cart_tree.setup_sorting()
         self.cart_tree.bind('<Double-1>', self.on_cart_double_click)
-        self.cart_tree.bind('<BackSpace>', self._on_cart_backspace)
         self.cart_tree.bind('<MouseWheel>', self._on_cart_wheel, add='+')
         self.editing_entry = None
 
@@ -94,19 +95,22 @@ class CashRegisterWindow(tk.Toplevel):
         self.btn_increase = tk.Button(btn_cart, text="+", width=3, takefocus=0,
                                       command=self.increase_cart_qty)
         self.btn_increase.pack(side=tk.LEFT, padx=2)
-        self.btn_remove = tk.Button(btn_cart, text="Удалить", takefocus=0,
+        self.btn_remove = tk.Button(btn_cart, text=t('cash.btn.remove'), takefocus=0,
                                     command=self.remove_from_cart)
         self.btn_remove.pack(side=tk.LEFT, padx=2)
 
-        self.btn_checkout = tk.Button(right_frame, text="Оформить продажу",
+        self.btn_checkout = tk.Button(right_frame, text=t('cash.btn.checkout'),
                                       command=self.checkout,
                                       bg="#4CAF50", fg="white",
                                       font=("Arial", 11, "bold"))
         self.btn_checkout.pack(pady=10, fill=tk.X)
 
-        self.total_var = tk.StringVar(value="Итого: 0.00")
+        self.total_var = tk.StringVar(value=t('cash.total', sum='0.00'))
         tk.Label(right_frame, textvariable=self.total_var,
                  font=("Arial", 14)).pack()
+
+        setup_table_navigation(self, [self.products_tree, self.cart_tree], horizontal=True)
+        register_cash_key_handlers(self)
 
         center_window(self)
         self.refresh_products()
@@ -176,13 +180,52 @@ class CashRegisterWindow(tk.Toplevel):
     def _get_product(self, product_id):
         return self.store.get_db_row(product_id)
 
-    def _on_products_enter(self, event):
-        self.add_to_cart()
-        return 'break'
+    def _focused_product_id(self):
+        """Товар с фокусом/подсветкой в списке (не требует selection)."""
+        iid = self.products_tree.get_focused_row_iid()
+        if iid and self.products_tree.exists(iid):
+            return int(iid)
+        selected = self.products_tree.selection()
+        if selected and self.products_tree.exists(selected[0]):
+            return int(selected[0])
+        return None
 
-    def _on_cart_backspace(self, event):
+    def _handle_return_key(self, event):
+        """Enter: добавить товар (не в корзине и не в поле поиска)."""
+        if self.editing_entry:
+            return False
+        w = event.widget
+        if w is self.qty_spinbox:
+            self.add_to_cart()
+            return True
+        if w is self.search_panel.entry:
+            return False
+        if w.winfo_class() in ('Entry', 'TEntry'):
+            return False
+        nav = get_table_navigation(self)
+        if nav and nav._active_table is self.cart_tree:
+            return True
+        if w is self.cart_tree.tree:
+            return True
+        self.add_to_cart()
+        return True
+
+    def _handle_backspace_key(self, event):
+        """Backspace: удалить из корзины (не в полях ввода)."""
+        if self.editing_entry:
+            return False
+        w = event.widget
+        if w is self.search_panel.entry or w is self.qty_spinbox:
+            return False
+        if w.winfo_class() in ('Entry', 'TEntry', 'Spinbox', 'Text'):
+            return False
+        nav = get_table_navigation(self)
+        if nav and nav._active_table is self.products_tree:
+            return False
+        if not self.cart:
+            return True
         self.remove_from_cart()
-        return 'break'
+        return True
 
     def _on_cart_wheel(self, event):
         idx = self._selected_cart_index()
@@ -224,14 +267,14 @@ class CashRegisterWindow(tk.Toplevel):
             return
         qty = 1
         if product[5] <= 0:
-            messagebox.showwarning("Внимание", "Товар закончился на складе.", parent=self)
+            messagebox.showwarning(t('common.attention'), t('cash.out_of_stock'), parent=self)
             return
         for idx, item in enumerate(self.cart):
             if item[0] == product_id:
                 new_amount = item[3] + qty
                 if new_amount > product[5]:
-                    messagebox.showwarning("Внимание",
-                        f"Недостаточно на складе. Доступно: {product[5]}", parent=self)
+                    messagebox.showwarning(t('common.attention'),
+                        t('cash.not_enough_stock', amount=product[5]), parent=self)
                     return
                 self.cart[idx] = (product_id, product[1], product[4], new_amount)
                 self._update_cart_row(product_id)
@@ -240,29 +283,28 @@ class CashRegisterWindow(tk.Toplevel):
         self._insert_cart_row(product_id, product[1], product[4], qty)
 
     def add_to_cart(self):
-        selected = self.products_tree.selection()
-        if not selected:
-            messagebox.showwarning("Внимание", "Выберите товар для добавления.", parent=self)
+        product_id = self._focused_product_id()
+        if product_id is None:
+            messagebox.showwarning(t('common.attention'), t('cash.select_product'), parent=self)
             return
-        product_id = int(selected[0])
         product = self._get_product(product_id)
         if product is None:
-            messagebox.showerror("Ошибка", "Товар не найден.", parent=self)
+            messagebox.showerror(t('common.error'), t('cash.product_not_found'), parent=self)
             return
         qty = self.qty_var.get()
         if qty <= 0:
-            messagebox.showwarning("Внимание", "Количество должно быть положительным.", parent=self)
+            messagebox.showwarning(t('common.attention'), t('cash.qty_positive'), parent=self)
             return
         if qty > product[5]:
-            messagebox.showwarning("Внимание",
-                f"Недостаточно на складе. Доступно: {product[5]}", parent=self)
+            messagebox.showwarning(t('common.attention'),
+                t('cash.not_enough_stock', amount=product[5]), parent=self)
             return
         for idx, item in enumerate(self.cart):
             if item[0] == product_id:
                 new_amount = item[3] + qty
                 if new_amount > product[5]:
-                    messagebox.showwarning("Внимание",
-                        f"Недостаточно на складе. Доступно: {product[5]}", parent=self)
+                    messagebox.showwarning(t('common.attention'),
+                        t('cash.not_enough_stock', amount=product[5]), parent=self)
                     return
                 self.cart[idx] = (product_id, product[1], product[4], new_amount)
                 self._update_cart_row(product_id)
@@ -274,7 +316,7 @@ class CashRegisterWindow(tk.Toplevel):
 
     def _update_cart_total(self):
         total = sum(item[2] * item[3] for item in self.cart)
-        self.total_var.set(f"Итого: {total:.2f}")
+        self.total_var.set(t('cash.total', sum=f'{total:.2f}'))
 
     def _insert_cart_row(self, product_id, name, price, qty):
         iid = str(product_id)
@@ -351,21 +393,32 @@ class CashRegisterWindow(tk.Toplevel):
         except Exception:
             pass
 
+    def _cart_index_for_iid(self, iid):
+        """Индекс в self.cart по iid строки дерева (не по позиции в treeview)."""
+        if not iid or not self.cart_tree.exists(iid):
+            return -1
+        try:
+            product_id = int(iid)
+        except (TypeError, ValueError):
+            return -1
+        for i, item in enumerate(self.cart):
+            if item[0] == product_id:
+                return i
+        return -1
+
     def _selected_cart_index(self):
         checked = self.cart_tree.get_checked_iids()
         if len(checked) == 1:
-            iid = checked[0]
-            if self.cart_tree.exists(iid):
-                return self.cart_tree.index(iid)
-        iid = self.cart_tree.get_active_iid()
-        if iid and self.cart_tree.exists(iid):
-            return self.cart_tree.index(iid)
+            return self._cart_index_for_iid(checked[0])
+        iid = self.cart_tree.get_focused_row_iid()
+        if iid:
+            return self._cart_index_for_iid(iid)
         sel = self.cart_tree.selection()
         if sel:
-            return self.cart_tree.index(sel[0])
+            return self._cart_index_for_iid(sel[0])
         focus_iid = self.cart_tree.focus()
-        if focus_iid and self.cart_tree.exists(focus_iid):
-            return self.cart_tree.index(focus_iid)
+        if focus_iid:
+            return self._cart_index_for_iid(focus_iid)
         return -1
 
     def decrease_cart_qty(self):
@@ -377,21 +430,21 @@ class CashRegisterWindow(tk.Toplevel):
     def _modify_cart_qty(self, delta):
         idx = self._selected_cart_index()
         if idx < 0:
-            messagebox.showwarning("Внимание", "Выберите товар в корзине.", parent=self)
+            messagebox.showwarning(t('common.attention'), t('cash.select_cart_item'), parent=self)
             return
         product_id, name, price, old_qty = self.cart[idx]
         new_qty = old_qty + delta
         if new_qty <= 0:
-            if messagebox.askyesno("Удаление",
-                                   "Количество стало 0. Удалить товар из корзины?",
+            if messagebox.askyesno(t('cash.delete_title'),
+                                   t('cash.delete_zero_qty'),
                                    parent=self):
                 del self.cart[idx]
                 self._remove_cart_rows([product_id])
             return
         product = self._get_product(product_id)
         if product and new_qty > product[5]:
-            messagebox.showwarning("Внимание",
-                f"Недостаточно на складе. Доступно: {product[5]}", parent=self)
+            messagebox.showwarning(t('common.attention'),
+                t('cash.not_enough_stock', amount=product[5]), parent=self)
             return
         self.cart[idx] = (product_id, name, price, new_qty)
         self._update_cart_row(product_id)
@@ -400,27 +453,30 @@ class CashRegisterWindow(tk.Toplevel):
     def remove_from_cart(self):
         checked = self.cart_tree.get_checked_iids()
         if checked:
-            indices = sorted(
-                [self.cart_tree.index(iid) for iid in checked
-                 if self.cart_tree.exists(iid)],
-                reverse=True
-            )
-            if not indices:
-                messagebox.showwarning("Внимание", "Выберите товар в корзине.", parent=self)
+            product_ids = [
+                int(iid) for iid in checked
+                if self.cart_tree.exists(iid)
+            ]
+            if not product_ids:
+                messagebox.showwarning(t('common.attention'), t('cash.select_cart_item'),
+                                       parent=self)
                 return
-            removed_ids = []
-            for idx in indices:
-                if 0 <= idx < len(self.cart):
-                    removed_ids.append(self.cart[idx][0])
-                    del self.cart[idx]
-            self._remove_cart_rows(removed_ids)
+            ids_set = set(product_ids)
+            self.cart = [item for item in self.cart if item[0] not in ids_set]
+            self._remove_cart_rows(product_ids)
             return
-        idx = self._selected_cart_index()
-        if idx < 0:
-            messagebox.showwarning("Внимание", "Выберите товар в корзине.", parent=self)
+
+        iid = self.cart_tree.get_focused_row_iid()
+        if not iid:
+            sel = self.cart_tree.selection()
+            if sel:
+                iid = sel[0]
+        if not iid or not self.cart_tree.exists(iid):
+            messagebox.showwarning(t('common.attention'), t('cash.select_cart_item'),
+                                   parent=self)
             return
-        product_id = self.cart[idx][0]
-        del self.cart[idx]
+        product_id = int(iid)
+        self.cart = [item for item in self.cart if item[0] != product_id]
         self._remove_cart_rows([product_id])
 
     def on_cart_double_click(self, event):
@@ -453,24 +509,25 @@ class CashRegisterWindow(tk.Toplevel):
                 if new_qty <= 0:
                     raise ValueError
             except ValueError:
-                messagebox.showwarning("Внимание",
-                    "Количество должно быть положительным целым числом.", parent=self)
+                messagebox.showwarning(t('common.attention'),
+                    t('cash.qty_edit_invalid'), parent=self)
                 self.editing_entry.focus()
                 return
-            idx = self.cart_tree.index(row_id)
+            product_id = int(row_id)
+            idx = self._cart_index_for_iid(row_id)
             if idx < 0 or idx >= len(self.cart):
                 self.editing_entry.destroy()
                 self.editing_entry = None
                 return
-            product_id, name, price, old_qty = self.cart[idx]
+            _pid, name, price, old_qty = self.cart[idx]
             product = self._get_product(product_id)
             if not product:
                 self.editing_entry.destroy()
                 self.editing_entry = None
                 return
             if new_qty > product[5]:
-                messagebox.showwarning("Внимание",
-                    f"Недостаточно на складе. Доступно: {product[5]}", parent=self)
+                messagebox.showwarning(t('common.attention'),
+                    t('cash.not_enough_stock', amount=product[5]), parent=self)
                 self.editing_entry.focus()
                 return
             self.cart[idx] = (product_id, name, price, new_qty)
@@ -485,7 +542,7 @@ class CashRegisterWindow(tk.Toplevel):
 
     def checkout(self):
         if not self.cart:
-            messagebox.showwarning("Внимание", "Корзина пуста.", parent=self)
+            messagebox.showwarning(t('common.attention'), t('cash.empty_cart'), parent=self)
             return
         pay_window = PaymentWindow(
             self, self.db, self.cart,
@@ -499,6 +556,8 @@ class CashRegisterWindow(tk.Toplevel):
         self.refresh_cart()
 
     def on_close(self):
+        unregister_table_navigation(self)
+        unregister_cash_key_handlers(self)
         if hasattr(self.master, "child_windows") and self in self.master.child_windows:
             self.master.child_windows.remove(self)
         self.destroy()

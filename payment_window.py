@@ -1,6 +1,8 @@
 import tkinter as tk
 from tkinter import messagebox
 from datetime import datetime
+from resources.receipt_templates import build_sale_receipt
+from resources.i18n import t
 from utils import bind_entry_shortcuts, center_window, format_datetime
 from receipt_window import ReceiptWindow
 
@@ -15,7 +17,7 @@ class PaymentWindow(tk.Toplevel):
         self.refresh_products_callback = refresh_products_callback
         self.clear_cart_callback = clear_cart_callback
 
-        self.title("Оплата")
+        self.title(t('payment.title'))
         self.geometry("300x360")
         self.wm_iconbitmap("main_icon.ico")
         self.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -24,10 +26,10 @@ class PaymentWindow(tk.Toplevel):
         self._radio_buttons = []
 
         self.total_sum = sum(item[2]*item[3] for item in cart)
-        tk.Label(self, text="Сумма к оплате: {0:.2f}".format(self.total_sum),
+        tk.Label(self, text=t('payment.total', sum=f'{self.total_sum:.2f}'),
                  font=("Arial", 14)).pack(pady=10)
 
-        tk.Label(self, text="Тип оплаты:").pack()
+        tk.Label(self, text=t('payment.type_label')).pack()
         self.payment_types = self.db.get_payment_types()
         self.payment_var = tk.IntVar()
         self.payment_var.set(self.payment_types[0][0])
@@ -37,17 +39,17 @@ class PaymentWindow(tk.Toplevel):
             rb.pack(anchor='w')
             self._radio_buttons.append(rb)
 
-        tk.Label(self, text="Внесенная сумма:").pack()
+        tk.Label(self, text=t('payment.payed_label')).pack()
         self.payed_var = tk.DoubleVar(value=self.total_sum)
         self.payed_entry = tk.Entry(self, textvariable=self.payed_var)
         self.payed_entry.pack()
         bind_entry_shortcuts(self.payed_entry)
 
-        self.btn_pay = tk.Button(self, text="Оплатить", command=self.pay)
+        self.btn_pay = tk.Button(self, text=t('payment.btn.pay'), command=self.pay)
         self.btn_pay.pack(pady=20)
 
         self.btn_view_receipt = tk.Button(
-            self, text="Просмотр чеков",
+            self, text=t('payment.btn.view_receipt'),
             command=self.view_receipt, state='disabled')
         self.btn_view_receipt.pack(pady=(0, 10))
 
@@ -82,27 +84,15 @@ class PaymentWindow(tk.Toplevel):
         self.btn_view_receipt.focus_set()
 
     def _build_receipt_text(self, date_str, payment_type_id, total_sum, payed, refused):
-        lines = []
-        lines.append("=" * 42)
-        lines.append("МАГАЗИН РЫБОЛОВНЫХ ТОВАРОВ".center(42))
-        lines.append("КАССОВЫЙ ЧЕК".center(42))
-        lines.append("=" * 42)
-        lines.append("Дата: {0}".format(format_datetime(date_str)))
-        lines.append("Тип оплаты: {0}".format(
-            self._payment_type_name(payment_type_id)))
-        lines.append("-" * 42)
-        for item in self.cart:
-            product_id, name, price, amount = item
-            item_sum = price * amount
-            lines.append("{0}".format(name))
-            lines.append("  {0} x {1:.2f} = {2:.2f}".format(amount, price, item_sum))
-        lines.append("-" * 42)
-        lines.append("ИТОГО: {0:.2f}".format(total_sum))
-        lines.append("Внесено: {0:.2f}".format(payed))
-        lines.append("Сдача: {0:.2f}".format(refused))
-        lines.append("=" * 42)
-        lines.append("СПАСИБО ЗА ПОКУПКУ!".center(42))
-        return "\n".join(lines)
+        return build_sale_receipt(
+            self.cart,
+            date_str,
+            self._payment_type_name(payment_type_id),
+            total_sum,
+            payed,
+            refused,
+            format_datetime,
+        )
 
     def _payment_type_name(self, payment_type_id):
         for pt in self.payment_types:
@@ -115,7 +105,7 @@ class PaymentWindow(tk.Toplevel):
             return
         payed = self.payed_var.get()
         if payed < self.total_sum:
-            messagebox.showwarning("Внимание", "Внесенная сумма меньше суммы к оплате.",
+            messagebox.showwarning(t('common.attention'), t('payment.too_small'),
                                    parent=self)
             self._focus_amount()
             return
@@ -131,10 +121,10 @@ class PaymentWindow(tk.Toplevel):
                 self.total_sum, payed, refused, items, receipt_text
             )
         except ValueError as e:
-            messagebox.showwarning("Внимание", str(e), parent=self)
+            messagebox.showwarning(t('common.attention'), str(e), parent=self)
             return
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось провести оплату: {e}", parent=self)
+            messagebox.showerror(t('common.error'), t('payment.failed', error=e), parent=self)
             return
 
         if self.store:
@@ -143,7 +133,8 @@ class PaymentWindow(tk.Toplevel):
         self._last_check_id = check_id
         self._last_date_str = date_str
 
-        messagebox.showinfo("Успех", "Оплата прошла успешно. Сдача: {0:.2f}".format(refused),
+        messagebox.showinfo(t('common.success'),
+                            t('payment.success', change=f'{refused:.2f}'),
                             parent=self)
         self.refresh_products_callback([item[0] for item in self.cart])
         self.clear_cart_callback()
@@ -151,7 +142,7 @@ class PaymentWindow(tk.Toplevel):
 
     def view_receipt(self):
         if self._last_check_id is None:
-            messagebox.showwarning("Внимание", "Чек ещё не создан.", parent=self)
+            messagebox.showwarning(t('common.attention'), t('payment.no_check'), parent=self)
             return
         row = self.db.get_receipt_text(self._last_check_id)
         date_str = self._last_date_str
@@ -160,7 +151,7 @@ class PaymentWindow(tk.Toplevel):
             date_str = row[0] or date_str
             receipt_text = row[1] or ""
         if not receipt_text:
-            messagebox.showwarning("Внимание", "Текст чека не найден.", parent=self)
+            messagebox.showwarning(t('common.attention'), t('payment.no_receipt_text'), parent=self)
             return
         ReceiptWindow(self, self._last_check_id, date_str, receipt_text)
 

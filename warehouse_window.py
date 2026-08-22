@@ -4,7 +4,8 @@ from datetime import datetime
 from database_operation import Database
 from product_edit_window import ProductEditWindow
 from write_off_window import WriteOffWindow
-from utils import SearchPanel, SortableTreeview, filter_with_checked, center_window, format_date, today_str
+from resources.i18n import t
+from utils import SearchPanel, SortableTreeview, filter_with_checked, center_window, format_date, today_str, setup_table_navigation, unregister_table_navigation
 from excel_export import ExcelExporter
 
 
@@ -13,7 +14,7 @@ class WarehouseWindow(tk.Toplevel):
         super().__init__(master)
         self.db = db
         self.store = master.product_store
-        self.title("Склад")
+        self.title(t('warehouse.title'))
         self.geometry("1000x500")
         self.state('zoomed')
         self.wm_iconbitmap("main_icon.ico")
@@ -30,18 +31,19 @@ class WarehouseWindow(tk.Toplevel):
         self.tree = SortableTreeview(
             self,
             columns=('check', 'id', 'code', 'name', 'buy_price',
-                     'sale_price', 'amount', 'purchase_date'),
+                     'sale_price', 'amount', 'purchase_date', 'supplier'),
             show='headings',
             checkbox_column=True
         )
-        self.tree.heading('check', text='☐')
-        self.tree.heading('id', text='ID')
-        self.tree.heading('code', text='Код товара')
-        self.tree.heading('name', text='Наименование')
-        self.tree.heading('buy_price', text='Цена закупки')
-        self.tree.heading('sale_price', text='Цена продажи')
-        self.tree.heading('amount', text='Количество')
-        self.tree.heading('purchase_date', text='Дата закупки')
+        self.tree.heading('check', text=t('common.checkbox_header'))
+        self.tree.heading('id', text=t('warehouse.col.id'))
+        self.tree.heading('code', text=t('warehouse.col.code'))
+        self.tree.heading('name', text=t('warehouse.col.name'))
+        self.tree.heading('buy_price', text=t('warehouse.col.buy_price'))
+        self.tree.heading('sale_price', text=t('warehouse.col.sale_price'))
+        self.tree.heading('amount', text=t('warehouse.col.amount'))
+        self.tree.heading('purchase_date', text=t('warehouse.col.purchase_date'))
+        self.tree.heading('supplier', text=t('warehouse.col.supplier'))
 
         self.tree.column('check', width=30, stretch=False)
         self.tree.column('id', width=50)
@@ -51,6 +53,7 @@ class WarehouseWindow(tk.Toplevel):
         self.tree.column('sale_price', width=90)
         self.tree.column('amount', width=80)
         self.tree.column('purchase_date', width=100)
+        self.tree.column('supplier', width=140)
 
         self.tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=(0, 5))
         self.tree.setup_sorting()
@@ -58,30 +61,32 @@ class WarehouseWindow(tk.Toplevel):
         btn_frame = tk.Frame(self)
         btn_frame.pack(fill=tk.X, padx=5, pady=5)
 
-        tk.Button(btn_frame, text="Добавить товар",
+        tk.Button(btn_frame, text=t('warehouse.btn.add'),
                   command=self.add_product).pack(side=tk.LEFT, padx=2)
-        tk.Button(btn_frame, text="Редактировать выбранные",
+        tk.Button(btn_frame, text=t('warehouse.btn.edit_selected'),
                   command=self.edit_selected).pack(side=tk.LEFT, padx=2)
-        tk.Button(btn_frame, text="Списать",
+        tk.Button(btn_frame, text=t('warehouse.btn.write_off'),
                   command=self.write_off_product).pack(side=tk.LEFT, padx=2)
-        tk.Button(btn_frame, text="Обновить",
+        tk.Button(btn_frame, text=t('warehouse.btn.refresh'),
                   command=self.refresh_products).pack(side=tk.LEFT, padx=2)
-        tk.Button(btn_frame, text="Удалить выбранное",
+        tk.Button(btn_frame, text=t('warehouse.btn.delete'),
                   command=self.delete_selected).pack(side=tk.LEFT, padx=2)
-        tk.Button(btn_frame, text="Экспорт в Excel",
+        tk.Button(btn_frame, text=t('warehouse.btn.export'),
                   command=self.export_to_excel).pack(side=tk.LEFT, padx=2)
 
         self.available_var = tk.BooleanVar(value=False)
         self.not_available_var = tk.BooleanVar(value=False)
 
-        tk.Checkbutton(btn_frame, text="В наличии",
+        tk.Checkbutton(btn_frame, text=t('warehouse.filter.available'),
                        variable=self.available_var,
                        command=self.on_filter_change).pack(
             side=tk.LEFT, padx=(20, 5))
-        tk.Checkbutton(btn_frame, text="Закончившиеся",
+        tk.Checkbutton(btn_frame, text=t('warehouse.filter.not_available'),
                        variable=self.not_available_var,
                        command=self.on_filter_change).pack(
             side=tk.LEFT, padx=5)
+
+        setup_table_navigation(self, [self.tree])
 
         center_window(self)
         self.refresh_products()
@@ -90,9 +95,12 @@ class WarehouseWindow(tk.Toplevel):
         display = list(p)
         if len(display) > 6:
             if display[6] is None or display[6] == '':
-                display[6] = '—'
+                display[6] = t('common.dash')
             else:
                 display[6] = format_date(display[6])
+        if len(display) > 7:
+            if display[7] is None or display[7] == '':
+                display[7] = t('common.dash')
         return tuple(display)
 
     def refresh_products(self, focus_product_id=None):
@@ -156,7 +164,8 @@ class WarehouseWindow(tk.Toplevel):
         else:
             search_col = self.tree.get_search_column()
             mapping = {'id': 0, 'code': 1, 'name': 2, 'buy_price': 3,
-                       'sale_price': 4, 'amount': 5, 'purchase_date': 6}
+                       'sale_price': 4, 'amount': 5, 'purchase_date': 6,
+                       'supplier': 7}
 
             def match(p):
                 if search_col is not None and search_col in mapping:
@@ -202,8 +211,8 @@ class WarehouseWindow(tk.Toplevel):
             focused = self.tree.get_focused_row_iid()
             if not focused:
                 messagebox.showwarning(
-                    "Внимание",
-                    "Отметьте товары галочками или выберите строку для редактирования.",
+                    t('common.attention'),
+                    t('warehouse.edit_no_selection'),
                     parent=self)
                 return
             iids = [focused]
@@ -243,7 +252,7 @@ class WarehouseWindow(tk.Toplevel):
                 product_id = int(focused)
         if product_id is None:
             messagebox.showwarning(
-                "Внимание", "Выберите один товар для списания.", parent=self)
+                t('common.attention'), t('warehouse.write_off_select_one'), parent=self)
             return
         WriteOffWindow(self, self.db, product_id, self.refresh_products,
                        store=self.store)
@@ -251,8 +260,8 @@ class WarehouseWindow(tk.Toplevel):
     def delete_selected(self):
         checked = self.tree.get_checked_iids()
         if not checked:
-            messagebox.showwarning("Внимание",
-                                   "Отметьте товары для удаления (колонка ☐).",
+            messagebox.showwarning(t('common.attention'),
+                                   t('warehouse.delete_no_selection'),
                                    parent=self)
             return
         names = [str(self.tree.item(iid, 'values')[3]) for iid in checked
@@ -260,8 +269,9 @@ class WarehouseWindow(tk.Toplevel):
         preview = ', '.join(names[:5])
         if len(names) > 5:
             preview += '...'
-        if not messagebox.askyesno("Подтверждение",
-                                   f"Удалить {len(names)} товаров?\n{preview}",
+        if not messagebox.askyesno(t('common.confirm'),
+                                   t('warehouse.delete_confirm',
+                                     count=len(names), preview=preview),
                                    parent=self):
             return
         for iid in checked:
@@ -270,8 +280,8 @@ class WarehouseWindow(tk.Toplevel):
             try:
                 self.store.delete(int(iid))
             except Exception as e:
-                messagebox.showerror("Ошибка",
-                                     f"Не удалось удалить товар: {e}", parent=self)
+                messagebox.showerror(t('common.error'),
+                                     t('warehouse.delete_error', error=e), parent=self)
         self.refresh_products()
 
     def export_to_excel(self):
@@ -280,15 +290,21 @@ class WarehouseWindow(tk.Toplevel):
             tuple(list(self.tree.item(iid, 'values'))[1:])
             for iid in self.tree.get_children('')]
         if not rows:
-            messagebox.showwarning("Внимание", "Нет данных для экспорта.", parent=self)
+            messagebox.showwarning(t('common.attention'), t('warehouse.export_no_data'),
+                                   parent=self)
             return
-        headers = ["ID", "Код товара", "Наименование",
-                   "Цена закупки", "Цена продажи", "Количество", "Дата закупки"]
-        filename = f"Склад_{today_str()}.xlsx"
+        headers = [
+            t('warehouse.col.id'), t('warehouse.col.code'), t('warehouse.col.name'),
+            t('warehouse.col.buy_price'), t('warehouse.col.sale_price'),
+            t('warehouse.col.amount'), t('warehouse.col.purchase_date'),
+            t('warehouse.col.supplier'),
+        ]
+        filename = t('warehouse.export_filename', date=today_str())
         filepath = ExcelExporter.export_data(
-            headers, rows, filename=filename, sheet_title="Склад")
+            headers, rows, filename=filename, sheet_title=t('warehouse.export_sheet'))
         ExcelExporter.open_file(filepath)
-        messagebox.showinfo("Экспорт", f"Файл сохранён:\n{filepath}", parent=self)
+        messagebox.showinfo(t('common.export'), t('warehouse.export_saved', path=filepath),
+                            parent=self)
 
     def on_filter_change(self):
         if self.available_var.get() and self.not_available_var.get():
@@ -296,6 +312,7 @@ class WarehouseWindow(tk.Toplevel):
         self._apply_filter_and_display(clear_search=True)
 
     def on_close(self):
+        unregister_table_navigation(self)
         self.edit_queue.clear()
         if hasattr(self.master, "child_windows") and self in self.master.child_windows:
             self.master.child_windows.remove(self)

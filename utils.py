@@ -307,6 +307,9 @@ class SortableTreeview(ttk.Frame):
                 children = self.tree.get_children('')
                 if children:
                     self.delete(*children)
+                self._active_row_iid = None
+                self._active_iid = None
+                self._hide_cell_highlight()
             for row in rows:
                 iid = iid_fn(row)
                 values = values_fn(row)
@@ -880,33 +883,365 @@ class SortableTreeview(ttk.Frame):
         self._set_active_row_iid(iid)
 
     def get_focused_row_iid(self):
-        """Строка с фокусом: tree.focus() или последняя активная (клик)."""
+        """Строка с фокусом: активная подсветка, затем focus treeview."""
+        if self._active_row_iid and self.tree.exists(self._active_row_iid):
+            return self._active_row_iid
         iid = self.tree.focus()
         if iid and self.tree.exists(iid):
             return iid
-        if self._active_row_iid and self.tree.exists(self._active_row_iid):
-            return self._active_row_iid
         return None
 
     def clear_active(self):
         self._active_iid = None
         self._set_active_row_iid(None)
 
+    def clear_row_highlight(self):
+        """Снять подсветку и выделение строк (при уходе фокуса с таблицы)."""
+        self._hide_cell_highlight()
+        self._active_iid = None
+        self._active_cell = None
+        self._active_cell_text = ''
+        self._set_active_row_iid(None)
+        try:
+            sel = self.tree.selection()
+            if sel:
+                self.tree.selection_remove(sel)
+        except tk.TclError:
+            pass
+        try:
+            self.tree.focus('')
+        except tk.TclError:
+            pass
+
+    # ── Навигация стрелками ─────────────────────────────────
+    def focus_row(self, iid):
+        """Выделить строку: подсветка, focus, selection, прокрутка."""
+        if not iid or not self.tree.exists(iid):
+            return
+        self._hide_cell_highlight()
+        self._set_active_row_iid(iid)
+        self._active_iid = iid
+        cols = self.tree['columns']
+        if cols:
+            col_name = cols[0]
+            self._active_cell = (iid, col_name)
+            try:
+                self._active_cell_text = self.tree.set(iid, col_name)
+            except tk.TclError:
+                self._active_cell_text = ''
+        self.tree.focus(iid)
+        self.tree.selection_set([iid])
+        self.tree.see(iid)
+        try:
+            self.tree.focus_set()
+        except Exception:
+            pass
+
+    def focus_first_row(self):
+        children = self.tree.get_children('')
+        if children:
+            self.focus_row(children[0])
+
+    def focus_last_row(self):
+        children = self.tree.get_children('')
+        if children:
+            self.focus_row(children[-1])
+
+    def navigate_row(self, delta):
+        """delta: -1 вверх, +1 вниз. Циклически; без активной строки — первая/последняя."""
+        children = self.tree.get_children('')
+        if not children:
+            return
+        current = self.get_focused_row_iid()
+        if not current or current not in children:
+            self.focus_row(children[-1] if delta < 0 else children[0])
+            return
+        idx = children.index(current)
+        new_idx = (idx + delta) % len(children)
+        self.focus_row(children[new_idx])
+
+    def focus_table(self):
+        try:
+            self.tree.focus_set()
+        except Exception:
+            try:
+                self.focus_set()
+            except Exception:
+                pass
+
     # ── Поиск по колонке ───────────────────────────────────
     def get_search_column(self):
         return self._search_column
+
+
+from resources.i18n import t
+
+
+_NAV_REGISTRY = {}
+_GLOBAL_ARROW_BOUND = False
+
+
+def _navigation_blocked(widget):
+    """Не перехватывать стрелки в полях ввода."""
+    w = widget
+    while w:
+        try:
+            cls = w.winfo_class()
+        except tk.TclError:
+            break
+        if cls in ('Entry', 'TEntry', 'Spinbox', 'Text'):
+            return True
+        try:
+            w = w.master
+        except Exception:
+            break
+    return False
+
+
+def _widget_inside_table(widget, table):
+    w = widget
+    while w:
+        if w == table or w == table.tree:
+            return True
+        try:
+            w = w.master
+        except Exception:
+            break
+    return False
+
+
+def _ensure_global_arrow_bindings():
+    global _GLOBAL_ARROW_BOUND
+    if _GLOBAL_ARROW_BOUND:
+        return
+    root = tk._default_root
+    if root is None:
+        return
+    for seq in ('<Up>', '<Down>', '<Left>', '<Right>'):
+        root.bind_all(seq, _dispatch_table_arrow, add='+')
+    _GLOBAL_ARROW_BOUND = True
+
+
+def _dispatch_table_arrow(event):
+    try:
+        top = event.widget.winfo_toplevel()
+    except tk.TclError:
+        return None
+    group = _NAV_REGISTRY.get(id(top))
+    if not group:
+        return None
+    for table in group.tables:
+        if event.widget == table.tree:
+            return None
+    if group.handle(event):
+        return 'break'
+    return None
+
+
+class TableNavigationGroup:
+    """Up/Down — строки; Left/Right — переключение между таблицами (horizontal=True)."""
+
+    def __init__(self, window, tables, horizontal=False):
+        self.window = window
+        self.tables = list(tables)
+        self.horizontal = horizontal
+        self._active_table = tables[0] if tables else None
+        self._last_row_iid = {}
+
+    def _horizontal_allowed(self):
+        """←/→ только если вторая таблица не пуста."""
+        if not self.horizontal or len(self.tables) < 2:
+            return False
+        return bool(self.tables[1].tree.get_children(''))
+
+    def bind_clicks(self):
+        for table in self.tables:
+            table.tree.bind(
+                '<ButtonPress-1>',
+                lambda e, t=table: self._set_active_table(t),
+                add='+',
+            )
+
+    def bind_tree_keys(self):
+        """Перехват стрелок на treeview (до встроенной навигации ttk)."""
+        seq_keys = (
+            ('<Up>', 'Up'),
+            ('<Down>', 'Down'),
+            ('<Left>', 'Left'),
+            ('<Right>', 'Right'),
+        )
+        for table in self.tables:
+            for seq, keysym in seq_keys:
+                table.tree.bind(
+                    seq,
+                    lambda e, t=table, k=keysym: self._on_tree_key(e, t, k),
+                )
+
+    def _on_tree_key(self, event, table, keysym):
+        if _navigation_blocked(event.widget):
+            return None
+        self._active_table = table
+        if self._apply_key(keysym, table):
+            return 'break'
+        return 'break'
+
+    def _set_active_table(self, table):
+        self._active_table = table
+
+    def _resolve_table(self, widget):
+        for table in self.tables:
+            if _widget_inside_table(widget, table):
+                self._active_table = table
+                return table
+        if self._active_table in self.tables:
+            return self._active_table
+        return self.tables[0] if self.tables else None
+
+    def _apply_key(self, keysym, table):
+        if keysym in ('Up', 'Down'):
+            delta = -1 if keysym == 'Up' else 1
+            table.navigate_row(delta)
+            self._active_table = table
+            self._remember_row(table)
+            return True
+        if self.horizontal and keysym in ('Left', 'Right'):
+            if not self._horizontal_allowed():
+                return True
+            self._switch_horizontal(keysym)
+            return True
+        return False
+
+    def handle(self, event):
+        if _navigation_blocked(event.widget):
+            return False
+        table = self._resolve_table(event.widget)
+        if table is None:
+            return False
+        return self._apply_key(event.keysym, table)
+
+    def _remember_row(self, table):
+        iid = table.get_focused_row_iid()
+        if iid and table.tree.exists(iid):
+            self._last_row_iid[id(table)] = iid
+
+    def _restore_row(self, table):
+        children = table.tree.get_children('')
+        if not children:
+            return
+        saved = self._last_row_iid.get(id(table))
+        if saved and saved in children:
+            table.focus_row(saved)
+        else:
+            table.focus_first_row()
+
+    def _switch_horizontal(self, keysym):
+        if not self.tables or not self._horizontal_allowed():
+            return
+        try:
+            idx = self.tables.index(self._active_table)
+        except ValueError:
+            idx = 0
+        if keysym == 'Left':
+            new_idx = max(0, idx - 1)
+        else:
+            new_idx = min(len(self.tables) - 1, idx + 1)
+        if new_idx == idx:
+            return
+        new_table = self.tables[new_idx]
+        if not new_table.tree.get_children(''):
+            return
+        old_table = self._active_table
+        if old_table is not None:
+            self._remember_row(old_table)
+            if old_table is not new_table:
+                old_table.clear_row_highlight()
+        self._active_table = new_table
+        new_table.focus_table()
+        self._restore_row(new_table)
+
+
+def setup_table_navigation(window, tables, horizontal=False):
+    """Подключить навигацию стрелками для окна с одной или несколькими таблицами."""
+    group = TableNavigationGroup(window, tables, horizontal=horizontal)
+    _NAV_REGISTRY[id(window)] = group
+    _ensure_global_arrow_bindings()
+    group.bind_clicks()
+    group.bind_tree_keys()
+    return group
+
+
+def unregister_table_navigation(window):
+    _NAV_REGISTRY.pop(id(window), None)
+
+
+def get_table_navigation(window):
+    return _NAV_REGISTRY.get(id(window))
+
+
+_CASH_KEY_WINDOWS = {}
+_CASH_KEYS_BOUND = False
+
+
+def register_cash_key_handlers(window):
+    """Enter — добавить в корзину; Backspace — удалить из корзины (окно кассы)."""
+    _CASH_KEY_WINDOWS[id(window)] = window
+    _ensure_cash_key_bindings()
+
+
+def unregister_cash_key_handlers(window):
+    _CASH_KEY_WINDOWS.pop(id(window), None)
+
+
+def _ensure_cash_key_bindings():
+    global _CASH_KEYS_BOUND
+    if _CASH_KEYS_BOUND:
+        return
+    root = tk._default_root
+    if root is None:
+        return
+    root.bind_all('<Return>', _dispatch_cash_return, add='+')
+    root.bind_all('<KP_Enter>', _dispatch_cash_return, add='+')
+    root.bind_all('<BackSpace>', _dispatch_cash_backspace, add='+')
+    _CASH_KEYS_BOUND = True
+
+
+def _dispatch_cash_return(event):
+    try:
+        top = event.widget.winfo_toplevel()
+    except tk.TclError:
+        return None
+    win = _CASH_KEY_WINDOWS.get(id(top))
+    if not win:
+        return None
+    if win._handle_return_key(event):
+        return 'break'
+    return None
+
+
+def _dispatch_cash_backspace(event):
+    try:
+        top = event.widget.winfo_toplevel()
+    except tk.TclError:
+        return None
+    win = _CASH_KEY_WINDOWS.get(id(top))
+    if not win:
+        return None
+    if win._handle_backspace_key(event):
+        return 'break'
+    return None
 
 
 class SearchPanel(tk.Frame):
     def __init__(self, master, search_callback, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
         self.search_callback = search_callback
-        tk.Label(self, text="Поиск:").pack(side=tk.LEFT, padx=(5, 2), pady=2)
+        tk.Label(self, text=t('common.search')).pack(side=tk.LEFT, padx=(5, 2), pady=2)
         self.entry = tk.Entry(self)
         self.entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2, pady=2)
-        self.entry.bind("<KeyRelease>", self._on_change)
+        self.entry.bind('<KeyRelease>', self._on_change)
         bind_entry_shortcuts(self.entry)
-        tk.Button(self, text="Очистить", command=self.clear).pack(side=tk.LEFT, padx=2, pady=2)
+        tk.Button(self, text=t('common.clear'), command=self.clear).pack(
+            side=tk.LEFT, padx=2, pady=2)
 
     def _on_change(self, event):
         self.search_callback(self.entry.get())
